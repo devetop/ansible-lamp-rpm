@@ -1,6 +1,9 @@
 ---
 # defaults file for php_fpm_multi
 
+# Default hosting users (override in group_vars or host_vars)
+hosting_users: []
+
 # PHP-FPM pool manager settings
 php_fpm_max_children: 10
 php_fpm_start_servers: 2

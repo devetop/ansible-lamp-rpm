@@ -3,6 +3,9 @@
 # Default Variables for httpd Role
 ###############################################################################
 
+# Default hosting users (override in group_vars or host_vars)
+hosting_users: []
+
 # Apache MPM (Multi-Processing Module) settings
 apache_mpm_module: event  # Options: prefork, worker, event
 
