@@ -1,10 +1,6 @@
 ---
 # tasks file for apache
 # Purpose: Web server provisioning and VirtualHost automation
-
-- name: Debug hosting_users
-  debug:
-    var: hosting_users
     
 - name: Install Apache HTTPD
   ansible.builtin.dnf:
@@ -88,14 +84,28 @@
 
 - name: Create subdomain directories
   ansible.builtin.file:
-    path: "/home/{{ item.0.username }}/{{ item.1 }}"
+    path: "/home/{{ user.username }}/{{ domain.domain }}/{{ subdomain }}"
     state: directory
-    owner: "{{ item.0.username }}"
-    group: "{{ item.0.username }}"
+    owner: "{{ user.username }}"
+    group: "{{ user.username }}"
     mode: '0755'
-  loop: "{{ hosting_users | subelements('domains', skip_missing=True) | subelements('subdomains', skip_missing=True) }}"
-  when: item.0.domains is defined
-  tags: [apache, users, directories]
+  loop: "{{ hosting_users }}"
+  loop_control:
+    loop_var: user
+  tasks:
+    - name: Loop domains
+      ansible.builtin.file:
+        path: "/home/{{ user.username }}/{{ domain.domain }}/{{ subdomain }}"
+        state: directory
+        owner: "{{ user.username }}"
+        group: "{{ user.username }}"
+        mode: '0755'
+      loop: "{{ user.domains }}"
+      loop_control:
+        loop_var: domain
+      vars:
+        subdomains: "{{ domain.subdomains | default([]) }}"
+      with_items: "{{ subdomains }}"
 
 - name: Set SELinux context for web content directories
   community.general.sefcontext:
