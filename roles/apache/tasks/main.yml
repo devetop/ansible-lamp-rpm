@@ -84,13 +84,12 @@
 
 - name: Create subdomain directories
   ansible.builtin.file:
-    path: "/home/{{ item.0.username }}/{{ item.2 }}"
+    path: "/home/{{ item.0.username }}/{{ item.1 }}"
     state: directory
     owner: "{{ item.0.username }}"
     group: "{{ item.0.username }}"
     mode: '0755'
-  loop: "{{ hosting_users | subelements('domains') | subelements('1.subdomains', skip_missing=True) }}"
-  when: item.1.subdomains is defined and item.1.subdomains | length > 0
+  loop: "{{ [[user, sub] for user in hosting_users for domain in (user.domains | default([])) for sub in (domain.subdomains | default([]))] }}"
   tags: [apache, users, directories]
 
 - name: Set SELinux context for web content directories
