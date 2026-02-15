@@ -3,7 +3,7 @@
 # This playbook orchestrates all roles to build a complete shared hosting stack
 
 - name: Deploy Shared Hosting Environment RHEL family
-  hosts: webservers
+  hosts: local
   become: yes
   gather_facts: yes
   
