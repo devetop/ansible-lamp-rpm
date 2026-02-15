@@ -82,14 +82,22 @@
   loop: "{{ hosting_users }}"
   tags: [apache, users, directories]
 
+- name: Build list of domains with user info
+  ansible.builtin.set_fact:
+    domain_list: "{{ domain_list | default([]) + [{'user': item.0.username, 'domain': item.1, 'subdomains': item.1.subdomains | default([])}] }}"
+  loop: "{{ hosting_users | subelements('domains', skip_missing=True) }}"
+  when: item.0.domains is defined
+  tags: [apache, users, directories, always]
+
 - name: Create subdomain directories
   ansible.builtin.file:
-    path: "/home/{{ item.0.username }}/{{ item.1 }}"
+    path: "/home/{{ item.0.user }}/{{ item.1 }}"
     state: directory
-    owner: "{{ item.0.username }}"
-    group: "{{ item.0.username }}"
+    owner: "{{ item.0.user }}"
+    group: "{{ item.0.user }}"
     mode: '0755'
-  loop: "{{ [[user, sub] for user in hosting_users for domain in (user.domains | default([])) for sub in (domain.subdomains | default([]))] }}"
+  loop: "{{ domain_list | subelements('subdomains', skip_missing=True) }}"
+  when: domain_list | length > 0
   tags: [apache, users, directories]
 
 - name: Set SELinux context for web content directories
