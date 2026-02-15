@@ -89,17 +89,13 @@
     owner: "{{ item.0.username }}"
     group: "{{ item.0.username }}"
     mode: '0755'
-  loop: >-
-    {% set dirs = [] %}
-    {% for user in hosting_users %}
-      {% for domain in user.domains | default([]) %}
-        {% for sub in domain.subdomains | default([]) %}
-          {% set _ = dirs.append([user, sub]) %}
-        {% endfor %}
-      {% endfor %}
-    {% endfor %}
-    {{ dirs }}
-  when: item.0.domains is defined
+  loop: "{{
+      (user, sub) 
+      for user in hosting_users 
+      for domain in (user.domains | default([])) 
+      for sub in (domain.subdomains | default([]))
+    }}"
+  # when: item.0.domains is defined  # Opsional: bisa dihapus karena loop sudah memfilter data
   tags: [apache, users, directories]
 
 - name: Set SELinux context for web content directories
