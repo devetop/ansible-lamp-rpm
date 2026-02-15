@@ -145,21 +145,33 @@
   notify: restart apache
   tags: [apache, vhosts]
 
+- name: Build list of domains with user info
+  ansible.builtin.set_fact:
+    domain_list: "{{ domain_list | default([]) + [{
+      'user': item.0.username,
+      'domain': item.1,
+      'subdomains': item.1.subdomains | default([]),
+      'user_php_versions': item.0.php_versions
+    }] }}"
+  loop: "{{ hosting_users | subelements('domains', skip_missing=True) }}"
+  when: item.0.domains is defined
+  tags: [apache, vhosts, always]
+
 - name: Generate VirtualHost for subdomains
   ansible.builtin.template:
     src: vhost-subdomain.conf.j2
-    dest: "/etc/httpd/sites-enabled/{{ item.0.username }}-{{ item.2 }}.{{ item.1.domain | replace('.', '_') }}.conf"
+    dest: "/etc/httpd/sites-enabled/{{ item.0.user }}-{{ item.1 }}.{{ item.0.domain.domain | replace('.', '_') }}.conf"
     owner: root
     group: root
     mode: '0644'
-  loop: "{{ hosting_users | subelements('domains') | subelements('1.subdomains', skip_missing=True) }}"
+  loop: "{{ domain_list | subelements('subdomains', skip_missing=True) }}"
   vars:
-    username: "{{ item.0.username }}"
-    domain: "{{ item.1.domain }}"
-    subdomain: "{{ item.2 }}"
-    php_version: "{{ item.1.php_version | default(item.0.php_version | default('8.1')) }}"
-    document_root: "/home/{{ item.0.username }}/{{ item.2 }}"
-  when: item.1.subdomains is defined and item.1.subdomains | length > 0
+    username: "{{ item.0.user }}"
+    domain: "{{ item.0.domain.domain }}"
+    subdomain: "{{ item.1 }}"
+    php_version: "{{ item.0.domain.php_version | default(item.0.user_php_versions[0] | default('8.1')) }}"
+    document_root: "/home/{{ item.0.user }}/{{ item.1 }}"
+  when: item.0.subdomains | length > 0
   notify: restart apache
   tags: [apache, vhosts]
 
