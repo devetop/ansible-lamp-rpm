@@ -69,7 +69,7 @@
           5. Set up monitoring
           
           Important Files:
-          - VirtualHost configs: /etc/httpd/vhosts.d/
+          - VirtualHost configs: /etc/httpd/sites-enabled/
           - PHP-FPM pools: /etc/opt/remi/php*/php-fpm.d/
           - Database credentials: /home/*/db-credentials-*.txt
           

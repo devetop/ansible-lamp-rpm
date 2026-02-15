@@ -146,7 +146,7 @@
     - name: Generate Apache VirtualHost configuration
       ansible.builtin.template:
         src: ../roles/apache/templates/vhost-main.conf.j2
-        dest: "/etc/httpd/vhosts.d/{{ new_username }}-{{ new_domain | replace('.', '_') }}.conf"
+        dest: "/etc/httpd/sites-enabled/{{ new_username }}-{{ new_domain | replace('.', '_') }}.conf"
         owner: root
         group: root
         mode: '0644'
@@ -161,7 +161,7 @@
     - name: Generate Apache VirtualHost for subdomains
       ansible.builtin.template:
         src: ../roles/apache/templates/vhost-subdomain.conf.j2
-        dest: "/etc/httpd/vhosts.d/{{ new_username }}-{{ item }}.{{ new_domain | replace('.', '_') }}.conf"
+        dest: "/etc/httpd/sites-enabled/{{ new_username }}-{{ item }}.{{ new_domain | replace('.', '_') }}.conf"
         owner: root
         group: root
         mode: '0644'

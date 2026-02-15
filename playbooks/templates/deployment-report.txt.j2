@@ -16,7 +16,7 @@ Apache HTTPD:
 - Version: {{ ansible_facts.packages['httpd'][0].version | default('N/A') }}
 - Status: Active
 - Configuration: /etc/httpd/conf/httpd.conf
-- VirtualHosts: /etc/httpd/vhosts.d/
+- VirtualHosts: /etc/httpd/sites-enabled/
 
 PHP-FPM:
 {% for version in all_php_versions | default([]) %}
@@ -84,7 +84,7 @@ IMPORTANT FILES AND LOCATIONS
 
 Configuration Files:
 - Apache Main Config: /etc/httpd/conf/httpd.conf
-- Apache VirtualHosts: /etc/httpd/vhosts.d/*.conf
+- Apache VirtualHosts: /etc/httpd/sites-enabled/*.conf
 - PHP-FPM Pools: /etc/opt/remi/php*/php-fpm.d/*.conf
 - MariaDB Config: /etc/my.cnf.d/99-custom.cnf
 

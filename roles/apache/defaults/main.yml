@@ -1,0 +1,46 @@
+---
+###############################################################################
+# Default Variables for httpd Role
+###############################################################################
+
+# Apache packages
+httpd_packages:
+  - httpd
+  - httpd-tools
+  - mod_ssl
+  - mod_fcgid
+
+# Apache service name
+httpd_service_name: httpd
+
+# Apache configuration
+httpd_listen_port: 80
+httpd_listen_port_ssl: 443
+httpd_server_admin: "webmaster@localhost"
+httpd_server_name: "{{ ansible_fqdn }}"
+httpd_document_root: "/var/www/html"
+
+# Apache modules to enable
+httpd_enable_modules:
+  - rewrite
+  - ssl
+  - headers
+
+# Security settings
+httpd_server_tokens: "Prod"
+httpd_server_signature: "Off"
+httpd_trace_enable: "Off"
+
+# Performance tuning
+httpd_max_clients: 150
+httpd_max_requests_per_child: 3000
+
+# Firewall ports
+httpd_firewall_ports:
+  - 80/tcp
+  - 443/tcp
+
+# Log files
+httpd_error_log: "logs/error_log"
+httpd_access_log: "logs/access_log"
+httpd_log_level: "warn"
