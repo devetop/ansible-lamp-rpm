@@ -1,0 +1,86 @@
+; PHP-FPM pool configuration for user: {{ username }}
+; PHP Version: {{ php_version }}
+
+[{{ username }}]
+
+; Unix user/group of processes
+user = {{ username }}
+group = {{ username }}
+
+; Socket path for this pool
+listen = /var/opt/remi/php{{ php_version | replace('.', '') }}/run/php-fpm/{{ username }}.sock
+
+; Socket permissions
+listen.owner = {{ username }}
+listen.group = apache
+listen.mode = 0660
+
+; Pool manager settings
+pm = dynamic
+pm.max_children = {{ php_fpm_max_children | default(10) }}
+pm.start_servers = {{ php_fpm_start_servers | default(2) }}
+pm.min_spare_servers = {{ php_fpm_min_spare_servers | default(1) }}
+pm.max_spare_servers = {{ php_fpm_max_spare_servers | default(3) }}
+pm.max_requests = {{ php_fpm_max_requests | default(500) }}
+
+; Process naming
+php_admin_value[process.priority] = -10
+
+; Logging
+php_admin_value[error_log] = /var/log/php-fpm/{{ username }}-error.log
+php_admin_flag[log_errors] = on
+
+; Session configuration
+php_value[session.save_handler] = files
+php_value[session.save_path] = /var/opt/remi/php{{ php_version | replace('.', '') }}/lib/php/session/{{ username }}
+
+; SOAP cache directory
+php_value[soap.wsdl_cache_dir] = /var/opt/remi/php{{ php_version | replace('.', '') }}/lib/php/wsdlcache/{{ username }}
+
+; Upload settings
+php_admin_value[upload_tmp_dir] = /home/{{ username }}/tmp
+php_admin_value[upload_max_filesize] = {{ php_upload_max_filesize | default('64M') }}
+php_admin_value[post_max_size] = {{ php_post_max_size | default('64M') }}
+
+; Memory and execution limits
+php_admin_value[memory_limit] = {{ php_memory_limit | default('256M') }}
+php_admin_value[max_execution_time] = {{ php_max_execution_time | default(300) }}
+php_admin_value[max_input_time] = {{ php_max_input_time | default(300) }}
+
+; Security settings
+php_admin_value[open_basedir] = /home/{{ username }}:/tmp:/var/opt/remi/php{{ php_version | replace('.', '') }}/lib/php/session/{{ username }}:/var/opt/remi/php{{ php_version | replace('.', '') }}/lib/php/wsdlcache/{{ username }}
+php_admin_flag[allow_url_fopen] = on
+php_admin_flag[allow_url_include] = off
+
+; Disable dangerous functions
+php_admin_value[disable_functions] = {{ php_disable_functions | default('exec,passthru,shell_exec,system,proc_open,popen,curl_exec,curl_multi_exec,parse_ini_file,show_source') }}
+
+; OPcache settings
+php_admin_value[opcache.enable] = 1
+php_admin_value[opcache.memory_consumption] = {{ php_opcache_memory | default(128) }}
+php_admin_value[opcache.interned_strings_buffer] = {{ php_opcache_strings_buffer | default(8) }}
+php_admin_value[opcache.max_accelerated_files] = {{ php_opcache_max_files | default(10000) }}
+php_admin_value[opcache.validate_timestamps] = 1
+php_admin_value[opcache.revalidate_freq] = {{ php_opcache_revalidate_freq | default(60) }}
+
+; Environment variables
+env[HOSTNAME] = $HOSTNAME
+env[PATH] = /usr/local/bin:/usr/bin:/bin
+env[TMP] = /home/{{ username }}/tmp
+env[TMPDIR] = /home/{{ username }}/tmp
+env[TEMP] = /home/{{ username }}/tmp
+
+; Request timeout
+request_terminate_timeout = {{ php_request_terminate_timeout | default(300) }}
+
+; Slow log (for debugging)
+slowlog = /var/log/php-fpm/{{ username }}-slow.log
+request_slowlog_timeout = {{ php_slowlog_timeout | default(30) }}
+
+; Status page (optional - can be accessed via web)
+;pm.status_path = /php-fpm-status
+;ping.path = /php-fpm-ping
+;ping.response = pong
+
+; Security limit for path
+php_admin_value[doc_root] = /home/{{ username }}

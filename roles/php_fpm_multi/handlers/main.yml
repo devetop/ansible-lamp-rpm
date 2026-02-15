@@ -1,0 +1,23 @@
+---
+# handlers file for php_fpm_multi
+
+- name: restart php-fpm services
+  ansible.builtin.systemd:
+    name: "php{{ item | replace('.', '') }}-php-fpm"
+    state: restarted
+  loop: "{{ all_php_versions | default([]) }}"
+  when: all_php_versions is defined
+  listen: restart php-fpm services
+
+- name: reload php-fpm services
+  ansible.builtin.systemd:
+    name: "php{{ item | replace('.', '') }}-php-fpm"
+    state: reloaded
+  loop: "{{ all_php_versions | default([]) }}"
+  when: all_php_versions is defined
+  listen: reload php-fpm services
+
+- name: restorecon php-fpm directories
+  ansible.builtin.command: "restorecon -Rv /var/opt/remi"
+  changed_when: false
+  listen: restorecon php-fpm directories

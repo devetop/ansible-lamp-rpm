@@ -1,0 +1,97 @@
+# Ansible Shared Hosting - Git Ignore
+
+# Vault files (encrypted passwords)
+group_vars/*/vault.yml
+host_vars/*/vault.yml
+vault.yml
+
+# Ansible retry files
+*.retry
+
+# Ansible facts cache
+.ansible/
+ansible_facts/
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+.env
+venv/
+ENV/
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# SSH keys (should never be in repo)
+*.pem
+*.key
+id_rsa
+id_rsa.pub
+
+# Vault password file
+.vault_pass
+.ansible_vault_pass
+
+# Custom local configurations
+local_config.yml
+*-local.yml
+
+# Output and generated files
+output/
+generated/
+*.output
+
+# Database dumps
+*.sql
+*.sql.gz
+
+# Terraform state (if using)
+*.tfstate
+*.tfstate.backup
+.terraform/
+
+# Documentation build
+_build/
+.doctrees/
+
+# Test results
+test-results/
+coverage/
+.pytest_cache/
+
+# Package management
+node_modules/
+bower_components/
+
+# Ansible Galaxy
+galaxy_install_info/
+.galaxy_install_info
+
+# Keep example files but ignore actual config
+!vault-example.yml
+!*-example.yml
+!*-sample.yml

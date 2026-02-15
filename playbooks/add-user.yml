@@ -1,0 +1,262 @@
+---
+# Playbook to add a new hosting user
+# Usage: ansible-playbook playbooks/add-user.yml -e "new_username=testuser new_domain=testdomain.com new_php_versions=['8.2']"
+
+- name: Add New Hosting User
+  hosts: webservers
+  become: yes
+  gather_facts: yes
+  
+  pre_tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - new_username is defined
+          - new_username | length > 0
+          - new_domain is defined
+          - new_domain | length > 0
+          - new_php_versions is defined
+        fail_msg: |
+          Required variables missing. Please provide:
+          -e "new_username=username new_domain=domain.com new_php_versions=['8.2']"
+        success_msg: "All required variables provided"
+    
+    - name: Set new user data structure
+      ansible.builtin.set_fact:
+        new_user:
+          username: "{{ new_username }}"
+          php_versions: "{{ new_php_versions }}"
+          domains:
+            - domain: "{{ new_domain }}"
+              php_version: "{{ new_php_versions[0] }}"
+              subdomains: "{{ new_subdomains | default([]) }}"
+    
+    - name: Merge new user into hosting_users
+      ansible.builtin.set_fact:
+        hosting_users: "{{ hosting_users | default([]) + [new_user] }}"
+    
+    - name: Display new user configuration
+      ansible.builtin.debug:
+        msg: |
+          Adding new hosting user:
+          Username: {{ new_username }}
+          PHP Versions: {{ new_php_versions | join(', ') }}
+          Domain: {{ new_domain }}
+          Subdomains: {{ new_subdomains | default([]) | join(', ') if new_subdomains is defined else 'None' }}
+
+  tasks:
+    # Create user
+    - name: Create Linux user
+      ansible.builtin.user:
+        name: "{{ new_username }}"
+        state: present
+        create_home: yes
+        home: "/home/{{ new_username }}"
+        shell: /bin/bash
+      tags: [user]
+    
+    # Create directories
+    - name: Create public_html directory
+      ansible.builtin.file:
+        path: "/home/{{ new_username }}/public_html"
+        state: directory
+        owner: "{{ new_username }}"
+        group: "{{ new_username }}"
+        mode: '0755'
+      tags: [user, directories]
+    
+    - name: Create tmp directory for PHP uploads
+      ansible.builtin.file:
+        path: "/home/{{ new_username }}/tmp"
+        state: directory
+        owner: "{{ new_username }}"
+        group: "{{ new_username }}"
+        mode: '0700'
+      tags: [user, directories]
+    
+    # Create subdomain directories if specified
+    - name: Create subdomain directories
+      ansible.builtin.file:
+        path: "/home/{{ new_username }}/{{ item }}"
+        state: directory
+        owner: "{{ new_username }}"
+        group: "{{ new_username }}"
+        mode: '0755'
+      loop: "{{ new_subdomains | default([]) }}"
+      when: new_subdomains is defined and new_subdomains | length > 0
+      tags: [user, directories]
+    
+    # Set SELinux contexts
+    - name: Set SELinux context for user directories
+      community.general.sefcontext:
+        target: "/home/{{ new_username }}(/.*)?"
+        setype: httpd_sys_content_t
+        state: present
+      tags: [user, selinux]
+    
+    - name: Apply SELinux contexts
+      ansible.builtin.command: "restorecon -Rv /home/{{ new_username }}"
+      changed_when: false
+      tags: [user, selinux]
+    
+    # Install PHP versions
+    - name: Install PHP-FPM packages for user
+      ansible.builtin.dnf:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ new_php_versions | product(php_packages) | map('join', '') | list }}"
+      vars:
+        php_packages:
+          - "-php-fpm"
+          - "-php-cli"
+          - "-php-common"
+          - "-php-mysqlnd"
+          - "-php-gd"
+          - "-php-xml"
+          - "-php-mbstring"
+      tags: [php, install]
+    
+    # Create PHP-FPM pools
+    - name: Create PHP-FPM pool configurations
+      ansible.builtin.template:
+        src: ../roles/php_fpm_multi/templates/php-fpm-pool.conf.j2
+        dest: "/etc/opt/remi/php{{ item | replace('.', '') }}/php-fpm.d/{{ new_username }}.conf"
+        owner: root
+        group: root
+        mode: '0644'
+      loop: "{{ new_php_versions }}"
+      vars:
+        username: "{{ new_username }}"
+        php_version: "{{ item }}"
+      notify: restart php-fpm
+      tags: [php, pool]
+    
+    # Create session directories
+    - name: Create PHP session directories
+      ansible.builtin.file:
+        path: "/var/opt/remi/php{{ item | replace('.', '') }}/lib/php/session/{{ new_username }}"
+        state: directory
+        owner: "{{ new_username }}"
+        group: "{{ new_username }}"
+        mode: '0700'
+      loop: "{{ new_php_versions }}"
+      tags: [php, session]
+    
+    # Generate VirtualHosts
+    - name: Generate Apache VirtualHost configuration
+      ansible.builtin.template:
+        src: ../roles/apache/templates/vhost-main.conf.j2
+        dest: "/etc/httpd/vhosts.d/{{ new_username }}-{{ new_domain | replace('.', '_') }}.conf"
+        owner: root
+        group: root
+        mode: '0644'
+      vars:
+        username: "{{ new_username }}"
+        domain: "{{ new_domain }}"
+        php_version: "{{ new_php_versions[0] }}"
+        document_root: "/home/{{ new_username }}/public_html"
+      notify: restart apache
+      tags: [apache, vhost]
+    
+    - name: Generate Apache VirtualHost for subdomains
+      ansible.builtin.template:
+        src: ../roles/apache/templates/vhost-subdomain.conf.j2
+        dest: "/etc/httpd/vhosts.d/{{ new_username }}-{{ item }}.{{ new_domain | replace('.', '_') }}.conf"
+        owner: root
+        group: root
+        mode: '0644'
+      loop: "{{ new_subdomains | default([]) }}"
+      vars:
+        username: "{{ new_username }}"
+        domain: "{{ new_domain }}"
+        subdomain: "{{ item }}"
+        php_version: "{{ new_php_versions[0] }}"
+        document_root: "/home/{{ new_username }}/{{ item }}"
+      when: new_subdomains is defined and new_subdomains | length > 0
+      notify: restart apache
+      tags: [apache, vhost]
+    
+    # Create database
+    - name: Create MariaDB database
+      community.mysql.mysql_db:
+        name: "{{ new_username }}_{{ new_domain | regex_replace('[^a-zA-Z0-9]', '_') }}"
+        state: present
+        login_user: root
+        login_password: "{{ mariadb_root_password }}"
+        collation: utf8mb4_unicode_ci
+        encoding: utf8mb4
+      tags: [database]
+    
+    - name: Generate database password
+      ansible.builtin.set_fact:
+        new_db_password: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      no_log: true
+      tags: [database]
+    
+    - name: Create database user
+      community.mysql.mysql_user:
+        name: "{{ (new_username + '_' + new_domain) | regex_replace('[^a-zA-Z0-9]', '_') | truncate(16, True, '') }}"
+        password: "{{ new_db_password }}"
+        priv: "{{ new_username }}_{{ new_domain | regex_replace('[^a-zA-Z0-9]', '_') }}.*:ALL"
+        host: localhost
+        state: present
+        login_user: root
+        login_password: "{{ mariadb_root_password }}"
+      no_log: true
+      tags: [database]
+    
+    - name: Save database credentials
+      ansible.builtin.copy:
+        content: |
+          Database: {{ new_username }}_{{ new_domain | regex_replace('[^a-zA-Z0-9]', '_') }}
+          User: {{ (new_username + '_' + new_domain) | regex_replace('[^a-zA-Z0-9]', '_') | truncate(16, True, '') }}
+          Password: {{ new_db_password }}
+          Host: localhost
+        dest: "/home/{{ new_username }}/db-credentials.txt"
+        owner: "{{ new_username }}"
+        group: "{{ new_username }}"
+        mode: '0600'
+      tags: [database]
+    
+    # Set ACLs
+    - name: Set ACL for Apache access
+      ansible.posix.acl:
+        path: "/home/{{ new_username }}"
+        entity: apache
+        etype: user
+        permissions: rx
+        state: present
+      tags: [acl]
+
+  handlers:
+    - name: restart php-fpm
+      ansible.builtin.systemd:
+        name: "php{{ item | replace('.', '') }}-php-fpm"
+        state: restarted
+      loop: "{{ new_php_versions }}"
+    
+    - name: restart apache
+      ansible.builtin.systemd:
+        name: httpd
+        state: restarted
+
+  post_tasks:
+    - name: Display completion message
+      ansible.builtin.debug:
+        msg: |
+          ================================================================================
+          USER ADDED SUCCESSFULLY
+          ================================================================================
+          Username: {{ new_username }}
+          Domain: {{ new_domain }}
+          Document Root: /home/{{ new_username }}/public_html
+          Database Credentials: /home/{{ new_username }}/db-credentials.txt
+          PHP Versions: {{ new_php_versions | join(', ') }}
+          ================================================================================
+          
+          Next Steps:
+          1. Upload website files to /home/{{ new_username }}/public_html
+          2. Configure DNS to point {{ new_domain }} to this server
+          3. Install SSL certificate (Let's Encrypt recommended)
+          4. Test PHP: create /home/{{ new_username }}/public_html/info.php
+          ================================================================================

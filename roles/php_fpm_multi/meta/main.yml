@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  author: DevOps Team
+  description: Multi-version PHP-FPM pool automation for shared hosting
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions:
+        - "9"
+  galaxy_tags:
+    - php
+    - php-fpm
+    - remi
+    - multi-version
+
+dependencies:
+  - role: common_repo

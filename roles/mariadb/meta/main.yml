@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  author: DevOps Team
+  description: MariaDB database automation for shared hosting with per-domain provisioning
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions:
+        - "9"
+  galaxy_tags:
+    - database
+    - mariadb
+    - mysql
+    - automation
+
+dependencies:
+  - role: common_repo

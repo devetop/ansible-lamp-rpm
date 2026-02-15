@@ -1,0 +1,92 @@
+---
+# Main playbook for shared hosting environment setup
+# This playbook orchestrates all roles to build a complete shared hosting stack
+
+- name: Deploy Shared Hosting Environment on Rocky Linux 9
+  hosts: local
+  connection: local
+  become: yes
+  gather_facts: yes
+  
+  pre_tasks:
+    - name: Display server information
+      ansible.builtin.debug:
+        msg: |
+          Deploying shared hosting environment to: {{ inventory_hostname }}
+          Distribution: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Architecture: {{ ansible_architecture }}
+      tags: [always]
+    
+    - name: Verify Rocky Linux 9
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == "Rocky"
+          - ansible_distribution_major_version == "9"
+        fail_msg: "This playbook requires Rocky Linux 9"
+        success_msg: "Rocky Linux 9 detected - proceeding with deployment"
+      tags: [always]
+    
+    - name: Update all packages (optional - remove if not desired)
+      ansible.builtin.dnf:
+        name: '*'
+        state: latest
+        update_cache: yes
+      when: update_packages | default(false) | bool
+      tags: [never, update]
+
+  roles:
+    - role: common_repo
+      tags: [common, repo]
+      
+    - role: apache
+      tags: [apache, web]
+      
+    - role: php_fpm_multi
+      tags: [php, php-fpm]
+      
+    - role: mariadb
+      tags: [mariadb, database, db]
+
+  post_tasks:
+    - name: Display deployment summary
+      ansible.builtin.debug:
+        msg: |
+          ================================================================================
+          SHARED HOSTING ENVIRONMENT DEPLOYMENT COMPLETE
+          ================================================================================
+          
+          Services Deployed:
+          - Apache HTTPD with dynamic VirtualHosts
+          - PHP-FPM (Multiple versions: {{ all_php_versions | default(['N/A']) | join(', ') }})
+          - MariaDB Server with automated database provisioning
+          
+          Users Created: {{ hosting_users | map(attribute='username') | join(', ') }}
+          
+          Next Steps:
+          1. Configure SSL certificates for domains
+          2. Review database credentials in user home directories
+          3. Test website deployments
+          4. Configure backups
+          5. Set up monitoring
+          
+          Important Files:
+          - VirtualHost configs: /etc/httpd/vhosts.d/
+          - PHP-FPM pools: /etc/opt/remi/php*/php-fpm.d/
+          - Database credentials: /home/*/db-credentials-*.txt
+          
+          ================================================================================
+      tags: [always]
+    
+    - name: Create deployment report
+      ansible.builtin.template:
+        src: deployment-report.txt.j2
+        dest: /root/shared-hosting-deployment-report.txt
+        owner: root
+        group: root
+        mode: '0600'
+      tags: [always]
+    
+    - name: Display report location
+      ansible.builtin.debug:
+        msg: "Full deployment report saved to: /root/shared-hosting-deployment-report.txt"
+      tags: [always]

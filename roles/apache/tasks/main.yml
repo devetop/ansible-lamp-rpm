@@ -1,0 +1,185 @@
+---
+# tasks file for apache
+# Purpose: Web server provisioning and VirtualHost automation
+
+- name: Install Apache HTTPD
+  ansible.builtin.dnf:
+    name:
+      - httpd
+      - httpd-tools
+      - mod_ssl
+    state: present
+  tags: [apache, install]
+
+- name: Enable required Apache modules
+  ansible.builtin.lineinfile:
+    path: /etc/httpd/conf.modules.d/00-base.conf
+    line: "LoadModule {{ item }}_module modules/mod_{{ item }}.so"
+    create: yes
+  loop:
+    - proxy
+    - proxy_fcgi
+    - rewrite
+    - headers
+    - expires
+  notify: restart apache
+  tags: [apache, modules]
+
+- name: Create base Apache configuration
+  ansible.builtin.template:
+    src: httpd.conf.j2
+    dest: /etc/httpd/conf/httpd.conf
+    owner: root
+    group: root
+    mode: '0644'
+    backup: yes
+  notify: restart apache
+  tags: [apache, config]
+
+- name: Create VirtualHost configuration directory
+  ansible.builtin.file:
+    path: /etc/httpd/vhosts.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  tags: [apache, config]
+
+- name: Include VirtualHosts directory in main config
+  ansible.builtin.lineinfile:
+    path: /etc/httpd/conf/httpd.conf
+    line: 'IncludeOptional vhosts.d/*.conf'
+    insertafter: EOF
+    state: present
+  notify: restart apache
+  tags: [apache, config]
+
+- name: Create hosting users
+  ansible.builtin.user:
+    name: "{{ item.username }}"
+    state: present
+    create_home: yes
+    home: "/home/{{ item.username }}"
+    shell: /bin/bash
+    groups: "{{ item.groups | default([]) }}"
+  loop: "{{ hosting_users }}"
+  tags: [apache, users]
+
+- name: Create public_html directory for main domain
+  ansible.builtin.file:
+    path: "/home/{{ item.username }}/public_html"
+    state: directory
+    owner: "{{ item.username }}"
+    group: "{{ item.username }}"
+    mode: '0755'
+  loop: "{{ hosting_users }}"
+  tags: [apache, users, directories]
+
+- name: Create subdomain directories
+  ansible.builtin.file:
+    path: "/home/{{ item.0.username }}/{{ item.1 }}"
+    state: directory
+    owner: "{{ item.0.username }}"
+    group: "{{ item.0.username }}"
+    mode: '0755'
+  loop: "{{ hosting_users | subelements('domains', skip_missing=True) | subelements('subdomains', skip_missing=True) }}"
+  when: item.0.domains is defined
+  tags: [apache, users, directories]
+
+- name: Set SELinux context for web content directories
+  community.general.sefcontext:
+    target: "/home/{{ item.username }}(/.*)?"
+    setype: httpd_sys_content_t
+    state: present
+  loop: "{{ hosting_users }}"
+  notify: restorecon home directories
+  tags: [apache, selinux]
+
+- name: Apply SELinux contexts immediately
+  ansible.builtin.command: "restorecon -Rv /home/{{ item.username }}"
+  loop: "{{ hosting_users }}"
+  changed_when: false
+  tags: [apache, selinux]
+
+- name: Allow Apache to connect to network (for proxying to PHP-FPM)
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: yes
+    persistent: yes
+  tags: [apache, selinux]
+
+- name: Allow Apache to read user content
+  ansible.posix.seboolean:
+    name: httpd_read_user_content
+    state: yes
+    persistent: yes
+  tags: [apache, selinux]
+
+- name: Generate VirtualHost for main domains
+  ansible.builtin.template:
+    src: vhost-main.conf.j2
+    dest: "/etc/httpd/vhosts.d/{{ item.0.username }}-{{ item.1.domain | replace('.', '_') }}.conf"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ hosting_users | subelements('domains', skip_missing=True) }}"
+  vars:
+    username: "{{ item.0.username }}"
+    domain: "{{ item.1.domain }}"
+    php_version: "{{ item.1.php_version | default(item.0.php_version | default('8.1')) }}"
+    document_root: "/home/{{ item.0.username }}/public_html"
+  notify: restart apache
+  tags: [apache, vhosts]
+
+- name: Generate VirtualHost for subdomains
+  ansible.builtin.template:
+    src: vhost-subdomain.conf.j2
+    dest: "/etc/httpd/vhosts.d/{{ item.0.username }}-{{ item.2 }}.{{ item.1.domain | replace('.', '_') }}.conf"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ hosting_users | subelements('domains', skip_missing=True) | subelements('subdomains', skip_missing=True) }}"
+  vars:
+    username: "{{ item.0.username }}"
+    domain: "{{ item.1.domain }}"
+    subdomain: "{{ item.2 }}"
+    php_version: "{{ item.1.php_version | default(item.0.php_version | default('8.1')) }}"
+    document_root: "/home/{{ item.0.username }}/{{ item.2 }}"
+  notify: restart apache
+  tags: [apache, vhosts]
+
+- name: Set proper ACLs for Apache access
+  ansible.posix.acl:
+    path: "/home/{{ item.username }}"
+    entity: apache
+    etype: user
+    permissions: rx
+    state: present
+  loop: "{{ hosting_users }}"
+  tags: [apache, acl]
+
+- name: Enable and start Apache service
+  ansible.builtin.systemd:
+    name: httpd
+    state: started
+    enabled: yes
+  tags: [apache, service]
+
+- name: Configure firewall for HTTP/HTTPS
+  ansible.posix.firewalld:
+    service: "{{ item }}"
+    permanent: yes
+    state: enabled
+    immediate: yes
+  loop:
+    - http
+    - https
+  when: ansible_facts.services['firewalld.service'] is defined
+  tags: [apache, firewall]
+
+- name: Test Apache configuration
+  ansible.builtin.command: httpd -t
+  register: apache_config_test
+  changed_when: false
+  failed_when: apache_config_test.rc != 0
+  tags: [apache, test]

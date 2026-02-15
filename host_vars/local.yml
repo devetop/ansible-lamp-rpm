@@ -1,0 +1,18 @@
+hosting_users:
+  # Example User 1: E-commerce site with blog
+  - username: devops
+    php_versions:
+      - "8.1"
+      - "8.2"
+    domains:
+      - domain: auto.rfan.my.id
+        php_version: "8.2"  # Override default PHP version for this domain
+        subdomains:
+          - blog      # blog.auto.rfan.my.id -> /home/devops/blog
+          - shop      # shop.auto.rfan.my.id -> /home/devops/shop
+          - api       # api.auto.rfan.my.id -> /home/devops/api
+    groups:
+      - wheel  # Optional: Additional Linux groups
+    php_custom_settings:
+      max_execution_time: 600
+      memory_limit: 512M

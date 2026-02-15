@@ -1,0 +1,65 @@
+---
+# tasks file for common_repo
+# Purpose: System repository and dependency preparation
+
+- name: Install EPEL repository
+  ansible.builtin.dnf:
+    name: epel-release
+    state: present
+  tags: [repo, epel]
+
+- name: Install Remi repository
+  ansible.builtin.dnf:
+    name: "https://rpms.remirepo.net/enterprise/remi-release-{{ ansible_distribution_major_version }}.rpm"
+    state: present
+    disable_gpg_check: yes
+  tags: [repo, remi]
+
+- name: Reset PHP module to allow multiple versions
+  ansible.builtin.command: dnf module reset php -y
+  changed_when: false
+  tags: [repo, php_module]
+
+- name: Install DNF plugins
+  ansible.builtin.dnf:
+    name:
+      - dnf-plugins-core
+      - dnf-utils
+    state: present
+  tags: [repo, dnf_plugins]
+
+- name: Enable PowerTools/CRB repository (required for some dependencies)
+  ansible.builtin.command: dnf config-manager --set-enabled crb
+  changed_when: false
+  tags: [repo, crb]
+
+- name: Install system packages required for web hosting stack
+  ansible.builtin.dnf:
+    name:
+      - policycoreutils-python-utils  # For semanage
+      - python3-policycoreutils       # For SELinux Ansible modules
+      - python3-libselinux
+      - python3-libsemanage
+      - python3-PyMySQL               # For Ansible MySQL modules
+      - tar
+      - gzip
+      - unzip
+      - wget
+      - curl
+      - vim
+      - git
+      - acl                           # For setfacl
+    state: present
+  tags: [repo, system_packages]
+
+- name: Verify repositories are configured
+  ansible.builtin.command: dnf repolist
+  register: repo_list
+  changed_when: false
+  tags: [repo, verify]
+
+- name: Display configured repositories
+  ansible.builtin.debug:
+    msg: "{{ repo_list.stdout_lines }}"
+  when: repo_list.stdout_lines is defined
+  tags: [repo, verify]

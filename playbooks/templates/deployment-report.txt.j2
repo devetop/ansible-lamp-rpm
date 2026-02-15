@@ -1,0 +1,156 @@
+================================================================================
+SHARED HOSTING ENVIRONMENT DEPLOYMENT REPORT
+================================================================================
+
+Deployment Date: {{ ansible_date_time.iso8601 }}
+Server: {{ inventory_hostname }}
+Operating System: {{ ansible_distribution }} {{ ansible_distribution_version }}
+Architecture: {{ ansible_architecture }}
+Kernel: {{ ansible_kernel }}
+
+================================================================================
+INSTALLED SERVICES
+================================================================================
+
+Apache HTTPD:
+- Version: {{ ansible_facts.packages['httpd'][0].version | default('N/A') }}
+- Status: Active
+- Configuration: /etc/httpd/conf/httpd.conf
+- VirtualHosts: /etc/httpd/vhosts.d/
+
+PHP-FPM:
+{% for version in all_php_versions | default([]) %}
+- PHP {{ version }}: Installed
+  Service: php{{ version | replace('.', '') }}-php-fpm
+  Configuration: /etc/opt/remi/php{{ version | replace('.', '') }}/
+{% endfor %}
+
+MariaDB:
+- Version: {{ ansible_facts.packages['mariadb-server'][0].version | default('N/A') }}
+- Status: Active
+- Configuration: /etc/my.cnf.d/
+
+================================================================================
+HOSTING USERS
+================================================================================
+
+{% for user in hosting_users %}
+User: {{ user.username }}
+- Home Directory: /home/{{ user.username }}
+- PHP Versions: {{ user.php_versions | join(', ') }}
+- Domains:
+{% for domain in user.domains %}
+  * {{ domain.domain }} (PHP {{ domain.php_version | default(user.php_version | default('8.1')) }})
+    - Document Root: /home/{{ user.username }}/public_html
+    - Database: {{ user.username }}_{{ domain.domain | regex_replace('[^a-zA-Z0-9]', '_') }}
+{% if domain.subdomains is defined and domain.subdomains | length > 0 %}
+    - Subdomains:
+{% for subdomain in domain.subdomains %}
+      * {{ subdomain }}.{{ domain.domain }}
+        - Document Root: /home/{{ user.username }}/{{ subdomain }}
+        - Database: {{ user.username }}_{{ subdomain }}_{{ domain.domain | regex_replace('[^a-zA-Z0-9]', '_') }}
+{% endfor %}
+{% endif %}
+{% endfor %}
+
+{% endfor %}
+
+================================================================================
+NETWORK CONFIGURATION
+================================================================================
+
+IP Address: {{ ansible_default_ipv4.address | default('N/A') }}
+Network Interface: {{ ansible_default_ipv4.interface | default('N/A') }}
+
+Firewall (firewalld):
+- HTTP (80/tcp): Enabled
+- HTTPS (443/tcp): Enabled
+- MySQL (3306/tcp): {{ 'Enabled' if mariadb_allow_remote | default(false) else 'Disabled (localhost only)' }}
+
+================================================================================
+SELINUX CONFIGURATION
+================================================================================
+
+SELinux Status: {{ ansible_selinux.status }}
+SELinux Mode: {{ ansible_selinux.mode | default('N/A') }}
+
+Configured Booleans:
+- httpd_can_network_connect: On
+- httpd_read_user_content: On
+
+================================================================================
+IMPORTANT FILES AND LOCATIONS
+================================================================================
+
+Configuration Files:
+- Apache Main Config: /etc/httpd/conf/httpd.conf
+- Apache VirtualHosts: /etc/httpd/vhosts.d/*.conf
+- PHP-FPM Pools: /etc/opt/remi/php*/php-fpm.d/*.conf
+- MariaDB Config: /etc/my.cnf.d/99-custom.cnf
+
+Log Files:
+- Apache Access: /var/log/httpd/*-access.log
+- Apache Error: /var/log/httpd/*-error.log
+- PHP-FPM Error: /var/log/php-fpm/*-error.log
+- MariaDB Error: /var/log/mariadb/mariadb.log
+
+User Data:
+- Web Content: /home/*/public_html
+- Database Credentials: /home/*/db-credentials-*.txt
+
+================================================================================
+SECURITY NOTES
+================================================================================
+
+1. MariaDB root password is stored in: /root/.my.cnf (mode 0600)
+2. Database credentials are stored per-user in their home directories
+3. All PHP-FPM pools run under their respective user accounts
+4. SELinux is enabled and properly configured
+5. Firewall allows only HTTP, HTTPS traffic
+
+IMPORTANT: 
+- Regularly update system packages
+- Monitor log files for suspicious activity
+- Implement SSL certificates for all domains
+- Set up automated backups for databases and user content
+- Review and rotate database passwords periodically
+
+================================================================================
+POST-DEPLOYMENT CHECKLIST
+================================================================================
+
+[ ] Configure SSL certificates (Let's Encrypt recommended)
+[ ] Set up log rotation for application logs
+[ ] Configure backup strategy (databases + user files)
+[ ] Implement monitoring (Nagios, Zabbix, or Prometheus)
+[ ] Test all domains and subdomains
+[ ] Verify PHP-FPM pool functionality
+[ ] Test database connections from applications
+[ ] Configure email service (if needed)
+[ ] Set up intrusion detection (fail2ban recommended)
+[ ] Document server maintenance procedures
+
+================================================================================
+SUPPORT AND TROUBLESHOOTING
+================================================================================
+
+Common Commands:
+- Check Apache: systemctl status httpd
+- Check PHP-FPM: systemctl status php82-php-fpm
+- Check MariaDB: systemctl status mariadb
+- Test Apache Config: httpd -t
+- Test PHP-FPM: /opt/remi/php82/root/usr/sbin/php-fpm -t
+- View Logs: journalctl -u httpd -f
+
+For issues, check:
+1. Service logs: journalctl -xe
+2. SELinux denials: ausearch -m avc -ts recent
+3. File permissions: namei -l /path/to/file
+4. Network connectivity: ss -tlnp
+
+================================================================================
+DEPLOYMENT COMPLETED SUCCESSFULLY
+================================================================================
+
+Report Generated: {{ ansible_date_time.iso8601 }}
+Ansible Version: {{ ansible_version.full }}

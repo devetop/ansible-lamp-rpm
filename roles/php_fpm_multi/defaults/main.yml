@@ -1,0 +1,37 @@
+---
+# defaults file for php_fpm_multi
+
+# PHP-FPM pool manager settings
+php_fpm_max_children: 10
+php_fpm_start_servers: 2
+php_fpm_min_spare_servers: 1
+php_fpm_max_spare_servers: 3
+php_fpm_max_requests: 500
+
+# PHP memory and execution settings
+php_memory_limit: "256M"
+php_max_execution_time: 300
+php_max_input_time: 300
+php_upload_max_filesize: "64M"
+php_post_max_size: "64M"
+
+# PHP security settings
+php_disable_functions: "exec,passthru,shell_exec,system,proc_open,popen,curl_exec,curl_multi_exec,parse_ini_file,show_source"
+
+# OPcache settings
+php_opcache_memory: 128
+php_opcache_strings_buffer: 8
+php_opcache_max_files: 10000
+php_opcache_revalidate_freq: 60
+
+# Request timeout settings
+php_request_terminate_timeout: 300
+php_slowlog_timeout: 30
+
+# PHP timezone
+php_timezone: "UTC"
+
+# Error reporting settings
+php_error_reporting: "E_ALL & ~E_DEPRECATED & ~E_STRICT"
+php_display_errors: "Off"
+php_display_startup_errors: "Off"

@@ -1,0 +1,151 @@
+---
+# tasks file for php_fpm_multi
+# Purpose: Multi-PHP FPM pool automation
+
+- name: Create list of unique PHP versions to install
+  ansible.builtin.set_fact:
+    all_php_versions: "{{ hosting_users | map(attribute='php_versions', default=[]) | flatten | unique | list }}"
+  tags: [php, setup]
+
+- name: Display PHP versions to be installed
+  ansible.builtin.debug:
+    msg: "Installing PHP versions: {{ all_php_versions }}"
+  tags: [php, setup]
+
+- name: Install PHP packages for each version
+  ansible.builtin.dnf:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ all_php_versions | product(php_packages) | map('join', '') | list }}"
+  vars:
+    php_packages:
+      - "-php-fpm"
+      - "-php-cli"
+      - "-php-common"
+      - "-php-mysqlnd"
+      - "-php-gd"
+      - "-php-xml"
+      - "-php-mbstring"
+      - "-php-json"
+      - "-php-opcache"
+      - "-php-pdo"
+      - "-php-zip"
+      - "-php-curl"
+      - "-php-intl"
+      - "-php-bcmath"
+      - "-php-soap"
+  tags: [php, install]
+
+- name: Create PHP-FPM configuration directories for each version
+  ansible.builtin.file:
+    path: "/etc/opt/remi/php{{ item | replace('.', '') }}/php-fpm.d"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop: "{{ all_php_versions }}"
+  tags: [php, config]
+
+- name: Backup default PHP-FPM www pool configuration
+  ansible.builtin.copy:
+    src: "/etc/opt/remi/php{{ item | replace('.', '') }}/php-fpm.d/www.conf"
+    dest: "/etc/opt/remi/php{{ item | replace('.', '') }}/php-fpm.d/www.conf.bak"
+    remote_src: yes
+    force: no
+  loop: "{{ all_php_versions }}"
+  tags: [php, config]
+
+- name: Disable default www pool
+  ansible.builtin.replace:
+    path: "/etc/opt/remi/php{{ item | replace('.', '') }}/php-fpm.d/www.conf"
+    regexp: '^\[www\]'
+    replace: ';[www]'
+  loop: "{{ all_php_versions }}"
+  notify: restart php-fpm services
+  tags: [php, config]
+
+- name: Create PHP-FPM pool for each user
+  ansible.builtin.template:
+    src: php-fpm-pool.conf.j2
+    dest: "/etc/opt/remi/php{{ item.1 | replace('.', '') }}/php-fpm.d/{{ item.0.username }}.conf"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ hosting_users | product(all_php_versions) | list }}"
+  when: item.1 in item.0.php_versions
+  vars:
+    username: "{{ item.0.username }}"
+    php_version: "{{ item.1 }}"
+  notify: restart php-fpm services
+  tags: [php, pools]
+
+- name: Create PHP session directories for each user
+  ansible.builtin.file:
+    path: "/var/opt/remi/php{{ item.1 | replace('.', '') }}/lib/php/session/{{ item.0.username }}"
+    state: directory
+    owner: "{{ item.0.username }}"
+    group: "{{ item.0.username }}"
+    mode: '0700'
+  loop: "{{ hosting_users | product(all_php_versions) | list }}"
+  when: item.1 in item.0.php_versions
+  tags: [php, sessions]
+
+- name: Create PHP wsdlcache directories for each user
+  ansible.builtin.file:
+    path: "/var/opt/remi/php{{ item.1 | replace('.', '') }}/lib/php/wsdlcache/{{ item.0.username }}"
+    state: directory
+    owner: "{{ item.0.username }}"
+    group: "{{ item.0.username }}"
+    mode: '0700'
+  loop: "{{ hosting_users | product(all_php_versions) | list }}"
+  when: item.1 in item.0.php_versions
+  tags: [php, cache]
+
+- name: Set SELinux context for PHP-FPM sockets
+  community.general.sefcontext:
+    target: "/var/opt/remi/php{{ item | replace('.', '') }}/run/php-fpm(/.*)?"
+    setype: httpd_var_run_t
+    state: present
+  loop: "{{ all_php_versions }}"
+  notify: restorecon php-fpm directories
+  tags: [php, selinux]
+
+- name: Apply SELinux contexts to PHP-FPM directories
+  ansible.builtin.command: "restorecon -Rv /var/opt/remi/php{{ item | replace('.', '') }}/run"
+  loop: "{{ all_php_versions }}"
+  changed_when: false
+  tags: [php, selinux]
+
+- name: Configure custom PHP settings for each user
+  ansible.builtin.template:
+    src: php-custom.ini.j2
+    dest: "/etc/opt/remi/php{{ item.1 | replace('.', '') }}/php.d/99-{{ item.0.username }}-custom.ini"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ hosting_users | product(all_php_versions) | list }}"
+  when: item.1 in item.0.php_versions and item.0.php_custom_settings is defined
+  notify: restart php-fpm services
+  tags: [php, custom_ini]
+
+- name: Enable and start PHP-FPM services for each version
+  ansible.builtin.systemd:
+    name: "php{{ item | replace('.', '') }}-php-fpm"
+    state: started
+    enabled: yes
+  loop: "{{ all_php_versions }}"
+  tags: [php, service]
+
+- name: Verify PHP-FPM pool configurations
+  ansible.builtin.command: "/opt/remi/php{{ item | replace('.', '') }}/root/usr/sbin/php-fpm -t"
+  loop: "{{ all_php_versions }}"
+  register: php_fpm_test
+  changed_when: false
+  failed_when: php_fpm_test.rc != 0
+  tags: [php, test]
+
+- name: Display PHP-FPM configuration test results
+  ansible.builtin.debug:
+    msg: "PHP {{ item.item }} configuration test: {{ 'PASSED' if item.rc == 0 else 'FAILED' }}"
+  loop: "{{ php_fpm_test.results }}"
+  tags: [php, test]

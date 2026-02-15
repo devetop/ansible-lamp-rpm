@@ -1,0 +1,135 @@
+---
+# Group variables for webservers
+# This file defines the hosting users, domains, and PHP configurations
+
+# =============================================================================
+# HOSTING USERS CONFIGURATION
+# =============================================================================
+# Each user can have multiple domains, PHP versions, and custom settings
+# 
+# Structure:
+#   - username: Linux system username
+#   - php_versions: List of PHP versions (7.4, 8.1, 8.2)
+#   - domains: List of domains with subdomains
+#   - php_custom_settings: (Optional) Custom PHP.ini settings per user
+
+hosting_users:
+  # Example User 1: E-commerce site with blog
+  - username: johndoe
+    php_versions:
+      - "8.1"
+      - "8.2"
+    domains:
+      - domain: example.com
+        php_version: "8.2"  # Override default PHP version for this domain
+        subdomains:
+          - blog      # blog.example.com -> /home/johndoe/blog
+          - shop      # shop.example.com -> /home/johndoe/shop
+          - api       # api.example.com -> /home/johndoe/api
+    groups:
+      - wheel  # Optional: Additional Linux groups
+    php_custom_settings:
+      max_execution_time: 600
+      memory_limit: 512M
+
+  # Example User 2: Portfolio with multiple client sites
+  - username: janesmithagency
+    php_versions:
+      - "8.1"
+    domains:
+      - domain: janesmith.dev
+        php_version: "8.1"
+        subdomains:
+          - portfolio
+      - domain: clientsite1.com
+        php_version: "8.1"
+        subdomains: []
+      - domain: clientsite2.net
+        php_version: "8.1"
+        subdomains:
+          - staging
+    php_custom_settings:
+      upload_max_filesize: 128M
+      post_max_size: 128M
+
+  # Example User 3: Legacy application requiring older PHP
+  - username: legacyapp
+    php_versions:
+      - "7.4"
+      - "8.1"
+    domains:
+      - domain: oldapp.example.org
+        php_version: "7.4"  # Legacy app needs PHP 7.4
+        subdomains: []
+      - domain: newapp.example.org
+        php_version: "8.1"  # New version on modern PHP
+        subdomains:
+          - test
+          - dev
+
+  # Example User 4: Simple single-domain site
+  - username: simpleco
+    php_versions:
+      - "8.2"
+    domains:
+      - domain: simplecompany.com
+        php_version: "8.2"
+        subdomains:
+          - www  # Explicit www subdomain if needed
+
+# =============================================================================
+# MARIADB CONFIGURATION
+# =============================================================================
+# WARNING: Store this password in Ansible Vault in production!
+# Create vault with: ansible-vault create group_vars/webservers/vault.yml
+# Then reference: mariadb_root_password: "{{ vault_mariadb_root_password }}"
+
+mariadb_root_password: "StrongRootPassword123!ChangeMe"
+
+# MariaDB Performance Tuning (adjust based on server resources)
+mariadb_max_connections: 300
+mariadb_innodb_buffer_pool_size: "2G"  # 50-70% of available RAM
+mariadb_query_cache_size: "128M"
+
+# =============================================================================
+# PHP-FPM CONFIGURATION
+# =============================================================================
+# Global PHP-FPM pool settings (can be overridden per user)
+
+php_fpm_max_children: 15
+php_fpm_start_servers: 3
+php_fpm_min_spare_servers: 2
+php_fpm_max_spare_servers: 5
+
+# PHP memory and limits
+php_memory_limit: "512M"
+php_max_execution_time: 300
+php_upload_max_filesize: "128M"
+php_post_max_size: "128M"
+
+# PHP timezone (adjust to your location)
+php_timezone: "America/New_York"
+
+# =============================================================================
+# APACHE CONFIGURATION
+# =============================================================================
+# These are handled by the apache role but can be customized here if needed
+
+# Example: Custom Apache modules (if you need additional ones)
+# apache_extra_modules:
+#   - deflate
+#   - expires
+
+# =============================================================================
+# SECURITY SETTINGS
+# =============================================================================
+
+# Disable dangerous PHP functions
+php_disable_functions: "exec,passthru,shell_exec,system,proc_open,popen,curl_exec,curl_multi_exec,parse_ini_file,show_source,eval"
+
+# =============================================================================
+# OPTIONAL: PACKAGE UPDATES
+# =============================================================================
+# Set to true to update all system packages during deployment
+# WARNING: This can cause downtime - use with caution in production
+update_packages: false

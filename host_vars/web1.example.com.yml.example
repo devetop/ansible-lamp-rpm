@@ -1,0 +1,23 @@
+---
+###############################################################################
+# Host-Specific Variables Example
+# Filename: host_vars/web1.example.com.yml
+# 
+# These variables override group_vars for specific hosts
+# Useful for hosts with different requirements
+###############################################################################
+
+# Example: Development server with different PHP settings
+php_display_errors: "On"
+php_display_startup_errors: "On"
+php_memory_limit: "512M"
+php_max_execution_time: "600"
+
+# Different document root
+httpd_document_root: "/var/www/web1"
+
+# Custom timezone
+php_date_timezone: "America/New_York"
+
+# Environment marker
+environment: "development"

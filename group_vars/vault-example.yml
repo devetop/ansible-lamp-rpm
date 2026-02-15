@@ -1,0 +1,39 @@
+---
+# Ansible Vault Example File
+# This file shows what should be stored in an encrypted vault
+# 
+# To create an encrypted vault:
+# ansible-vault create group_vars/webservers/vault.yml
+#
+# To edit the vault:
+# ansible-vault edit group_vars/webservers/vault.yml
+#
+# To encrypt this file:
+# ansible-vault encrypt vault-example.yml
+
+# MariaDB Root Password
+# CRITICAL: Use a strong password in production!
+vault_mariadb_root_password: "YourStrongMariaDBRootPassword123!@#"
+
+# Optional: Store individual user database passwords if needed
+# vault_user_db_passwords:
+#   johndoe_example_com: "SecurePassword1"
+#   janesmithagency_janesmith_dev: "SecurePassword2"
+
+# Optional: SSH keys or other sensitive data
+# vault_ssh_private_key: |
+#   -----BEGIN RSA PRIVATE KEY-----
+#   Your private key content here
+#   -----END RSA PRIVATE KEY-----
+
+# Optional: API keys or tokens
+# vault_api_keys:
+#   monitoring_api_key: "your-monitoring-api-key"
+#   backup_api_token: "your-backup-api-token"
+
+# Optional: SSL certificate passwords
+# vault_ssl_passwords:
+#   example_com: "ssl-cert-password"
+
+# Reference these variables in your group_vars/webservers.yml:
+# mariadb_root_password: "{{ vault_mariadb_root_password }}"

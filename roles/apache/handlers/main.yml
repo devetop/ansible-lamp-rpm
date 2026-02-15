@@ -1,0 +1,19 @@
+---
+# handlers file for apache
+
+- name: restart apache
+  ansible.builtin.systemd:
+    name: httpd
+    state: restarted
+  listen: restart apache
+
+- name: reload apache
+  ansible.builtin.systemd:
+    name: httpd
+    state: reloaded
+  listen: reload apache
+
+- name: restorecon home directories
+  ansible.builtin.command: "restorecon -Rv /home"
+  changed_when: false
+  listen: restorecon home directories
