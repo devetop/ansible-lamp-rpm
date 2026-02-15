@@ -84,28 +84,14 @@
 
 - name: Create subdomain directories
   ansible.builtin.file:
-    path: "/home/{{ user.username }}/{{ domain.domain }}/{{ subdomain }}"
+    path: "/home/{{ item.0.username }}/{{ item.1 }}"
     state: directory
-    owner: "{{ user.username }}"
-    group: "{{ user.username }}"
+    owner: "{{ item.0.username }}"
+    group: "{{ item.0.username }}"
     mode: '0755'
-  loop: "{{ hosting_users }}"
-  loop_control:
-    loop_var: user
-  tasks:
-    - name: Loop domains
-      ansible.builtin.file:
-        path: "/home/{{ user.username }}/{{ domain.domain }}/{{ subdomain }}"
-        state: directory
-        owner: "{{ user.username }}"
-        group: "{{ user.username }}"
-        mode: '0755'
-      loop: "{{ user.domains }}"
-      loop_control:
-        loop_var: domain
-      vars:
-        subdomains: "{{ domain.subdomains | default([]) }}"
-      with_items: "{{ subdomains }}"
+  loop: "{{ hosting_users | subelements('domains', skip_missing=True) | subelements('subdomains', skip_missing=True) }}"
+  when: item.0.domains is defined
+  tags: [apache, users, directories]
 
 - name: Set SELinux context for web content directories
   community.general.sefcontext:
