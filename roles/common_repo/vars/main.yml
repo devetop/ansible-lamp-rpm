@@ -1,0 +1,28 @@
+---
+# vars file for common_repo
+
+# These are more static variables that shouldn't normally be overridden
+
+# Remi repository URL pattern
+remi_repo_url: "https://rpms.remirepo.net/enterprise/remi-release-{{ ansible_distribution_major_version }}.rpm"
+
+# Required system packages for the web hosting stack
+system_packages:
+  - policycoreutils-python-utils
+  - python3-policycoreutils
+  - python3-libselinux
+  - python3-libsemanage
+  - python3-PyMySQL
+  - tar
+  - gzip
+  - unzip
+  - wget
+  - curl
+  - vim
+  - git
+  - acl
+
+# DNF/YUM utilities
+dnf_packages:
+  - dnf-plugins-core
+  - dnf-utils

@@ -1,0 +1,44 @@
+---
+# vars file for php_fpm_multi
+
+# PHP-FPM package base names (will be combined with PHP version)
+# Example: php74-php-fpm, php81-php-fpm, php82-php-fpm
+php_base_packages:
+  - php-fpm
+  - php-cli
+  - php-common
+  - php-mysqlnd
+  - php-gd
+  - php-xml
+  - php-mbstring
+  - php-json
+  - php-opcache
+  - php-pdo
+  - php-zip
+  - php-curl
+  - php-intl
+  - php-bcmath
+  - php-soap
+
+# Optional PHP packages (can be added to group_vars if needed)
+php_optional_packages:
+  - php-imap
+  - php-ldap
+  - php-pear
+  - php-devel
+  - php-pspell
+  - php-enchant
+  - php-snmp
+  - php-xmlrpc
+
+# PHP-FPM service name pattern
+# Example: php74-php-fpm, php81-php-fpm
+php_fpm_service_pattern: "php{{ php_version | replace('.', '') }}-php-fpm"
+
+# PHP-FPM configuration paths
+php_fpm_conf_base: /etc/opt/remi
+php_fpm_run_base: /var/opt/remi
+php_fpm_lib_base: /var/opt/remi
+
+# PHP-FPM log directory
+php_fpm_log_dir: /var/log/php-fpm

@@ -1,9 +1,7 @@
 ---
-###############################################################################
-# Default Variables for httpd Role
-###############################################################################
+# defaults file for apache
 
-# Default hosting users (override in group_vars or host_vars)
+# Default hosting users (override in group_vars)
 hosting_users: []
 
 # Apache MPM (Multi-Processing Module) settings
@@ -61,4 +59,3 @@ apache_group: apache
 
 # Firewall management
 apache_manage_firewall: true
-

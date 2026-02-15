@@ -1,0 +1,33 @@
+---
+# vars file for mariadb
+
+# MariaDB package names
+mariadb_packages:
+  - mariadb-server
+  - mariadb
+  - python3-PyMySQL
+
+# MariaDB service name
+mariadb_service: mariadb
+
+# MariaDB configuration paths
+mariadb_conf_dir: /etc/my.cnf.d
+mariadb_data_dir: /var/lib/mysql
+mariadb_log_dir: /var/log/mariadb
+mariadb_socket: /var/lib/mysql/mysql.sock
+
+# MariaDB log files
+mariadb_error_log: /var/log/mariadb/mariadb.log
+mariadb_slow_query_log: /var/log/mariadb/slow-query.log
+
+# Character sets
+mariadb_character_set: utf8mb4
+mariadb_collation: utf8mb4_unicode_ci
+
+# Database naming patterns
+# Used internally for creating database and user names
+db_name_pattern: "{{ username }}_{{ domain | regex_replace('[^a-zA-Z0-9]', '_') }}"
+db_user_pattern: "{{ username }}_{{ domain | regex_replace('[^a-zA-Z0-9]', '_') | truncate(16, True, '') }}"
+
+# MySQL username length limit
+mysql_username_max_length: 16

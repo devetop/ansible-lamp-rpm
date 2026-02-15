@@ -1,0 +1,23 @@
+---
+# defaults file for common_repo
+
+# Repository configuration
+epel_repo_enabled: true
+remi_repo_enabled: true
+
+# System update before installation
+update_cache: true
+update_all_packages: false  # Set to true to update all packages (use with caution)
+
+# CRB (CodeReady Builder) repository - needed for some dependencies
+crb_repo_enabled: true
+
+# Package installation retry settings
+package_install_retries: 3
+package_install_delay: 5
+
+# Verify GPG signatures
+verify_gpg_signatures: true
+
+# Clean package cache after installation
+clean_package_cache: false

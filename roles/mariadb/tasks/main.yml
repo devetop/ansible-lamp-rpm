@@ -90,7 +90,8 @@
     login_password: "{{ mariadb_root_password }}"
     collation: utf8mb4_unicode_ci
     encoding: utf8mb4
-  loop: "{{ hosting_users | subelements('domains', skip_missing=True) | subelements('subdomains', skip_missing=True) }}"
+  loop: "{{ hosting_users | subelements('domains') | subelements('1.subdomains', skip_missing=True) }}"
+  when: item.1.subdomains is defined and item.1.subdomains | length > 0
   tags: [mariadb, databases]
 
 - name: Generate database passwords for main domains
@@ -103,7 +104,8 @@
 - name: Generate database passwords for subdomains
   ansible.builtin.set_fact:
     subdomain_db_passwords: "{{ subdomain_db_passwords | default({}) | combine({ item.0.username + '_' + item.2 + '_' + item.1.domain: lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }) }}"
-  loop: "{{ hosting_users | subelements('domains', skip_missing=True) | subelements('subdomains', skip_missing=True) }}"
+  loop: "{{ hosting_users | subelements('domains') | subelements('1.subdomains', skip_missing=True) }}"
+  when: item.1.subdomains is defined and item.1.subdomains | length > 0
   no_log: true
   tags: [mariadb, users]
 
@@ -129,7 +131,8 @@
     state: present
     login_user: root
     login_password: "{{ mariadb_root_password }}"
-  loop: "{{ hosting_users | subelements('domains', skip_missing=True) | subelements('subdomains', skip_missing=True) }}"
+  loop: "{{ hosting_users | subelements('domains') | subelements('1.subdomains', skip_missing=True) }}"
+  when: item.1.subdomains is defined and item.1.subdomains | length > 0
   no_log: true
   tags: [mariadb, users]
 
@@ -150,7 +153,8 @@
     owner: "{{ item.0.username }}"
     group: "{{ item.0.username }}"
     mode: '0600'
-  loop: "{{ hosting_users | subelements('domains', skip_missing=True) | subelements('subdomains', skip_missing=True) }}"
+  loop: "{{ hosting_users | subelements('domains') | subelements('1.subdomains', skip_missing=True) }}"
+  when: item.1.subdomains is defined and item.1.subdomains | length > 0
   tags: [mariadb, credentials]
 
 - name: Configure MariaDB for optimal performance

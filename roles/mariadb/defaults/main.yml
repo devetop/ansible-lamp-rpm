@@ -1,9 +1,6 @@
 ---
 # defaults file for mariadb
 
-# Default hosting users (override in group_vars or host_vars)
-hosting_users: []
-
 # MariaDB root password (OVERRIDE THIS IN YOUR VAULT!)
 mariadb_root_password: "ChangeMeToSecurePassword123!"
 

@@ -1,7 +1,7 @@
 ---
 # tasks file for apache
 # Purpose: Web server provisioning and VirtualHost automation
-    
+
 - name: Install Apache HTTPD
   ansible.builtin.dnf:
     name:
@@ -84,14 +84,13 @@
 
 - name: Create subdomain directories
   ansible.builtin.file:
-    path: "/home/{{ item.0.username }}/{{ item.1 }}"
+    path: "/home/{{ item.0.username }}/{{ item.2 }}"
     state: directory
     owner: "{{ item.0.username }}"
     group: "{{ item.0.username }}"
     mode: '0755'
-  loop: "{{ [(user, sub) for user in hosting_users for domain in (user.domains | default([])) for sub in (domain.subdomains | default([]))] }}"
-  # Ketika menggunakan default([]), kondisi 'when' di bawah ini sebenarnya tidak lagi wajib
-  # when: item.0.domains is defined 
+  loop: "{{ hosting_users | subelements('domains') | subelements('1.subdomains', skip_missing=True) }}"
+  when: item.1.subdomains is defined and item.1.subdomains | length > 0
   tags: [apache, users, directories]
 
 - name: Set SELinux context for web content directories
@@ -146,13 +145,14 @@
     owner: root
     group: root
     mode: '0644'
-  loop: "{{ hosting_users | subelements('domains', skip_missing=True) | subelements('subdomains', skip_missing=True) }}"
+  loop: "{{ hosting_users | subelements('domains') | subelements('1.subdomains', skip_missing=True) }}"
   vars:
     username: "{{ item.0.username }}"
     domain: "{{ item.1.domain }}"
     subdomain: "{{ item.2 }}"
     php_version: "{{ item.1.php_version | default(item.0.php_version | default('8.1')) }}"
     document_root: "/home/{{ item.0.username }}/{{ item.2 }}"
+  when: item.1.subdomains is defined and item.1.subdomains | length > 0
   notify: restart apache
   tags: [apache, vhosts]
 

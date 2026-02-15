@@ -5,6 +5,7 @@
 # =============================================================================
 # HOSTING USERS CONFIGURATION
 # =============================================================================
+# CRITICAL: This variable MUST be defined. If empty, use: hosting_users: []
 # Each user can have multiple domains, PHP versions, and custom settings
 # 
 # Structure:

@@ -1,0 +1,19 @@
+---
+# Minimal example configuration for testing deployment
+# Copy this file to group_vars/webservers.yml and customize
+
+# IMPORTANT: This is a minimal example for testing
+# For production use, create proper group_vars/webservers.yml with your actual configuration
+
+hosting_users:
+  - username: testuser
+    php_versions:
+      - "8.2"
+    domains:
+      - domain: test.local
+        php_version: "8.2"
+        subdomains: []
+
+# MariaDB root password
+# WARNING: Change this immediately!
+mariadb_root_password: "ChangeMe123!SecurePassword"

@@ -1,0 +1,12 @@
+---
+# handlers file for common_repo
+
+- name: update dnf cache
+  ansible.builtin.dnf:
+    update_cache: yes
+  listen: update dnf cache
+
+- name: clean dnf cache
+  ansible.builtin.command: dnf clean all
+  changed_when: false
+  listen: clean dnf cache
