@@ -2,7 +2,7 @@
 # Main playbook for shared hosting environment setup
 # This playbook orchestrates all roles to build a complete shared hosting stack
 
-- name: Deploy Shared Hosting Environment on Rocky Linux 9
+- name: Deploy Shared Hosting Environment RHEL family
   hosts: local
   connection: local
   become: yes
@@ -17,13 +17,12 @@
           Architecture: {{ ansible_architecture }}
       tags: [always]
     
-    - name: Verify Rocky Linux 9
+    - name: Verify RHEL family
       ansible.builtin.assert:
         that:
-          - ansible_distribution == "Rocky"
-          - ansible_distribution_major_version == "9"
-        fail_msg: "This playbook requires Rocky Linux 9"
-        success_msg: "Rocky Linux 9 detected - proceeding with deployment"
+          - ansible_distribution_file_variety == "RedHat"
+        fail_msg: "This playbook requires RHEL family (RHEL, CentOS, AlmaLinux, Rocky Linux). Detected: {{ ansible_distribution }} - aborting deployment"
+        success_msg: "RHEL family detected - proceeding with deployment"
       tags: [always]
     
     - name: Update all packages (optional - remove if not desired)
