@@ -7,9 +7,9 @@ hosting_users:
       - domain: auto.rfan.my.id
         php_version: "8.2"
         subdomains:
-          - { name: "blog" }
-          - { name: "shop" }
-          - { name: "api" }
+          - blog
+          - shop
+          - api
     groups:
       - wheel
     php_custom_settings:
