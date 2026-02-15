@@ -1,0 +1,37 @@
+---
+# vars file for apache
+
+# Apache package names
+apache_packages:
+  - httpd
+  - httpd-tools
+  - mod_ssl
+
+# Apache service name
+apache_service: httpd
+
+# Apache configuration paths
+apache_conf_dir: /etc/httpd/conf
+apache_conf_file: /etc/httpd/conf/httpd.conf
+apache_vhosts_dir: /etc/httpd/vhosts.d
+apache_modules_dir: /etc/httpd/conf.modules.d
+apache_log_dir: /var/log/httpd
+
+# Apache required modules for shared hosting
+apache_required_modules:
+  - proxy
+  - proxy_fcgi
+  - rewrite
+  - headers
+  - expires
+
+# Firewall services
+firewall_services:
+  - http
+  - https
+
+# SELinux booleans required for Apache
+apache_selinux_booleans:
+  httpd_can_network_connect: true
+  httpd_read_user_content: true
+  httpd_enable_homedirs: true

@@ -43,16 +43,6 @@
   notify: restart apache
   tags: [apache, config]
 
-- name: Deploy security configuration
-  ansible.builtin.template:
-    src: security.conf.j2
-    dest: /etc/httpd/conf.d/security.conf
-    owner: root
-    group: root
-    mode: '0644'
-  notify: restart apache
-  tags: [apache, config]
-
 - name: Create VirtualHost configuration directory
   ansible.builtin.file:
     path: /etc/httpd/sites-enabled

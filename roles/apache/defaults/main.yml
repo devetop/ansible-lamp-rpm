@@ -3,44 +3,59 @@
 # Default Variables for httpd Role
 ###############################################################################
 
-# Apache packages
-httpd_packages:
-  - httpd
-  - httpd-tools
-  - mod_ssl
-  - mod_fcgid
+# Apache MPM (Multi-Processing Module) settings
+apache_mpm_module: event  # Options: prefork, worker, event
 
-# Apache service name
-httpd_service_name: httpd
+# Apache performance tuning
+apache_max_request_workers: 250
+apache_server_limit: 256
+apache_start_servers: 3
+apache_min_spare_threads: 25
+apache_max_spare_threads: 75
+apache_threads_per_child: 25
+apache_max_connections_per_child: 1000
 
-# Apache configuration
-httpd_listen_port: 80
-httpd_listen_port_ssl: 443
-httpd_server_admin: "webmaster@localhost"
-httpd_server_name: "{{ ansible_fqdn }}"
-httpd_document_root: "/var/www/html"
+# KeepAlive settings
+apache_keepalive: "On"
+apache_keepalive_timeout: 5
+apache_max_keepalive_requests: 100
 
-# Apache modules to enable
-httpd_enable_modules:
-  - rewrite
-  - ssl
-  - headers
+# Timeout settings
+apache_timeout: 300
 
-# Security settings
-httpd_server_tokens: "Prod"
-httpd_server_signature: "Off"
-httpd_trace_enable: "Off"
+# Server tokens (security)
+apache_server_tokens: "Prod"
+apache_server_signature: "Off"
 
-# Performance tuning
-httpd_max_clients: 150
-httpd_max_requests_per_child: 3000
+# Default modules to enable
+apache_extra_modules: []
+  # - deflate
+  # - expires
+  # - cache
 
-# Firewall ports
-httpd_firewall_ports:
-  - 80/tcp
-  - 443/tcp
+# SSL/TLS settings (if SSL is enabled)
+apache_ssl_protocol: "all -SSLv3 -TLSv1 -TLSv1.1"
+apache_ssl_cipher_suite: "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384"
+apache_ssl_honor_cipher_order: "Off"
+apache_ssl_compression: "Off"
+apache_ssl_session_tickets: "Off"
 
-# Log files
-httpd_error_log: "logs/error_log"
-httpd_access_log: "logs/access_log"
-httpd_log_level: "warn"
+# Security headers (enabled by default in VirtualHost templates)
+apache_security_headers:
+  x_frame_options: "SAMEORIGIN"
+  x_content_type_options: "nosniff"
+  x_xss_protection: "1; mode=block"
+
+# Log format
+apache_log_format: "combined"
+
+# Default document root permissions
+apache_document_root_mode: "0755"
+
+# Apache user and group
+apache_user: apache
+apache_group: apache
+
+# Firewall management
+apache_manage_firewall: true
+
