@@ -2,6 +2,10 @@
 # tasks file for apache
 # Purpose: Web server provisioning and VirtualHost automation
 
+- name: Debug hosting_users
+  debug:
+    var: hosting_users
+    
 - name: Install Apache HTTPD
   ansible.builtin.dnf:
     name:
