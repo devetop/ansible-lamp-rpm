@@ -27,7 +27,7 @@ pm.max_requests = {{ php_fpm_max_requests | default(500) }}
 php_admin_value[process.priority] = -10
 
 ; Logging
-php_admin_value[error_log] = /var/log/php-fpm/{{ username }}-error.log
+php_admin_value[error_log] = /var/opt/remi/php{{ php_version | replace('.', '') }}/log/php-fpm/{{ username }}-error.log
 php_admin_flag[log_errors] = on
 
 ; Session configuration
@@ -74,7 +74,7 @@ env[TEMP] = /home/{{ username }}/tmp
 request_terminate_timeout = {{ php_request_terminate_timeout | default(300) }}
 
 ; Slow log (for debugging)
-slowlog = /var/log/php-fpm/{{ username }}-slow.log
+slowlog = /var/opt/remi/php{{ php_version | replace('.', '') }}/log/php-fpm/{{ username }}-slow.log
 request_slowlog_timeout = {{ php_slowlog_timeout | default(30) }}
 
 ; Status page (optional - can be accessed via web)

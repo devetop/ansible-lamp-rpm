@@ -129,6 +129,13 @@
     persistent: yes
   tags: [apache, selinux]
 
+- name: Allow Apache to read home directories
+  ansible.posix.seboolean:
+    name: httpd_enable_homedirs
+    state: yes
+    persistent: yes
+  tags: [apache, selinux]
+
 - name: Generate VirtualHost for main domains
   ansible.builtin.template:
     src: vhost-main.conf.j2
