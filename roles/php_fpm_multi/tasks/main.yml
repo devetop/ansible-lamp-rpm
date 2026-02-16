@@ -49,12 +49,10 @@
   loop: "{{ all_php_versions }}"
   tags: [php, config]
 
-- name: Backup default PHP-FPM www pool configuration
-  ansible.builtin.copy:
-    src: "/etc/opt/remi/php{{ item | replace('.', '') }}/php-fpm.d/www.conf"
-    dest: "/etc/opt/remi/php{{ item | replace('.', '') }}/php-fpm.d/www.conf.bak"
-    remote_src: yes
-    force: no
+- name: Remove default PHP-FPM www pool configuration
+  ansible.builtin.file:
+    path: "/etc/opt/remi/php{{ item | replace('.', '') }}/php-fpm.d/www.conf"
+    state: absent
   loop: "{{ all_php_versions }}"
   tags: [php, config]
 
