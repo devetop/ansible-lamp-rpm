@@ -14,5 +14,5 @@ galaxy_info:
     - remi
     - multi-version
 
-dependencies:
-  - role: common_repo
+# dependencies:
+#   - role: common_repo
