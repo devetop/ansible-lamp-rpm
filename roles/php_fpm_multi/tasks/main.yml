@@ -106,7 +106,7 @@
 
 - name: Set SELinux context for PHP-FPM sockets
   community.general.sefcontext:
-    target: "/var/opt/remi/php{{ item | replace('.', '') }}/run/php-fpm(/.*)?"
+    target: "/var/run/php-fpm(/.*)?"   # use the canonical path after equivalency
     setype: httpd_var_run_t
     state: present
   loop: "{{ all_php_versions }}"
