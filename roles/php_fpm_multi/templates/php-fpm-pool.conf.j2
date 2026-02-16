@@ -81,6 +81,3 @@ request_slowlog_timeout = {{ php_slowlog_timeout | default(30) }}
 ;pm.status_path = /php-fpm-status
 ;ping.path = /php-fpm-ping
 ;ping.response = pong
-
-; Security limit for path
-php_admin_value[doc_root] = /home/{{ username }}
