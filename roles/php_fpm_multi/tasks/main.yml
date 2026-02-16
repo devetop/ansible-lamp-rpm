@@ -12,28 +12,31 @@
     msg: "Installing PHP versions: {{ all_php_versions }}"
   tags: [php, setup]
 
-- name: Install PHP packages for each version
+- name: Display PHP package names (for debugging)
+  ansible.builtin.debug:
+    msg: "Will install: php{{ item | replace('.', '') }}-php-fpm and extensions"
+  loop: "{{ all_php_versions }}"
+  tags: [php, setup]
+
+- name: Install PHP-FPM and extensions for each version
   ansible.builtin.dnf:
-    name: "{{ item }}"
+    name:
+      - "php{{ item | replace('.', '') }}-php-fpm"
+      - "php{{ item | replace('.', '') }}-php-cli"
+      - "php{{ item | replace('.', '') }}-php-common"
+      - "php{{ item | replace('.', '') }}-php-mysqlnd"
+      - "php{{ item | replace('.', '') }}-php-gd"
+      - "php{{ item | replace('.', '') }}-php-xml"
+      - "php{{ item | replace('.', '') }}-php-mbstring"
+      - "php{{ item | replace('.', '') }}-php-opcache"
+      - "php{{ item | replace('.', '') }}-php-pdo"
+      - "php{{ item | replace('.', '') }}-php-zip"
+      - "php{{ item | replace('.', '') }}-php-curl"
+      - "php{{ item | replace('.', '') }}-php-intl"
+      - "php{{ item | replace('.', '') }}-php-bcmath"
+      - "php{{ item | replace('.', '') }}-php-soap"
     state: present
-  loop: "{{ all_php_versions | product(php_packages) | map('join', '') | list }}"
-  vars:
-    php_packages:
-      - "-php-fpm"
-      - "-php-cli"
-      - "-php-common"
-      - "-php-mysqlnd"
-      - "-php-gd"
-      - "-php-xml"
-      - "-php-mbstring"
-      - "-php-json"
-      - "-php-opcache"
-      - "-php-pdo"
-      - "-php-zip"
-      - "-php-curl"
-      - "-php-intl"
-      - "-php-bcmath"
-      - "-php-soap"
+  loop: "{{ all_php_versions }}"
   tags: [php, install]
 
 - name: Create PHP-FPM configuration directories for each version
