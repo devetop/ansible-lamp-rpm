@@ -58,15 +58,6 @@
   loop: "{{ all_php_versions }}"
   tags: [php, config]
 
-- name: Disable default www pool
-  ansible.builtin.replace:
-    path: "/etc/opt/remi/php{{ item | replace('.', '') }}/php-fpm.d/www.conf"
-    regexp: '^\[www\]'
-    replace: ';[www]'
-  loop: "{{ all_php_versions }}"
-  notify: restart php-fpm services
-  tags: [php, config]
-
 - name: Create PHP-FPM pool for each user
   ansible.builtin.template:
     src: php-fpm-pool.conf.j2
