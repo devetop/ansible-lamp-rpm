@@ -223,49 +223,64 @@
 # =============================================================================
 # IDEMPOTENCY FILTER: compute what is MISSING
 # =============================================================================
-# We produce four lists:
-#   _missing_domain_dbs    — domain databases not yet in information_schema
-#   _missing_subdomain_dbs — subdomain databases not yet in information_schema
-#   _missing_domain_users  — domain users not yet in mysql.user
-#   _missing_subdomain_users — subdomain users not yet in mysql.user
-#
-# Only the missing entries are fed into the creation tasks below.
-# On the second run all four lists will be empty → zero tasks execute
-# → play completes with ok=N changed=0, which is the definition of idempotent.
+# FIX: Menggunakan loop manual dengan filter | lower untuk memastikan
+# perbandingan nama database dan user bersifat case-insensitive.
+# Ini mencegah Ansible mencoba membuat ulang user yang sudah ada
+# tapi dengan penulisan huruf berbeda (misal: 'User1' vs 'user1').
 
 - name: Compute missing domain databases
   ansible.builtin.set_fact:
     _missing_domain_dbs: >-
-      {{ domain_entries
-         | rejectattr('db_name', 'in', _existing_db_names)
-         | list }}
+      {%- set existing_lower = _existing_db_names | map('lower') | list -%}
+      {%- set missing = [] -%}
+      {%- for item in domain_entries -%}
+        {%- if (item.db_name | lower) not in existing_lower -%}
+          {%- set _ = missing.append(item) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ missing }}
   changed_when: false
   tags: [mariadb, databases, preflight]
 
 - name: Compute missing subdomain databases
   ansible.builtin.set_fact:
     _missing_subdomain_dbs: >-
-      {{ subdomain_entries
-         | rejectattr('db_name', 'in', _existing_db_names)
-         | list }}
+      {%- set existing_lower = _existing_db_names | map('lower') | list -%}
+      {%- set missing = [] -%}
+      {%- for item in subdomain_entries -%}
+        {%- if (item.db_name | lower) not in existing_lower -%}
+          {%- set _ = missing.append(item) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ missing }}
   changed_when: false
   tags: [mariadb, databases, preflight]
 
 - name: Compute missing domain users
   ansible.builtin.set_fact:
     _missing_domain_users: >-
-      {{ domain_entries
-         | rejectattr('db_user', 'in', _existing_user_names)
-         | list }}
+      {%- set existing_lower = _existing_user_names | map('lower') | list -%}
+      {%- set missing = [] -%}
+      {%- for item in domain_entries -%}
+        {%- if (item.db_user | lower) not in existing_lower -%}
+          {%- set _ = missing.append(item) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ missing }}
   changed_when: false
   tags: [mariadb, users, preflight]
 
 - name: Compute missing subdomain users
   ansible.builtin.set_fact:
     _missing_subdomain_users: >-
-      {{ subdomain_entries
-         | rejectattr('db_user', 'in', _existing_user_names)
-         | list }}
+      {%- set existing_lower = _existing_user_names | map('lower') | list -%}
+      {%- set missing = [] -%}
+      {%- for item in subdomain_entries -%}
+        {%- if (item.db_user | lower) not in existing_lower -%}
+          {%- set _ = missing.append(item) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ missing }}
   changed_when: false
   tags: [mariadb, users, preflight]
 
