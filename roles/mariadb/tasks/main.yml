@@ -254,17 +254,15 @@
   ansible.builtin.template:
     src: db-credentials-subdomain.txt.j2
     dest: >-
-      /home/{{ item.0.username }}/db-credentials-{{ item.2 }}-{{ item.1.domain
+      /home/{{ item.0.user.username }}/db-credentials-{{ item.1 }}-{{ item.0.domain.domain
         | regex_replace('[^a-zA-Z0-9]', '_') }}.txt
-    owner: "{{ item.0.username }}"
-    group: "{{ item.0.username }}"
+    owner: "{{ item.0.user.username }}"
+    group: "{{ item.0.user.username }}"
     mode: '0600'
-  loop: "{{ hosting_users | subelements('domains') | subelements('1.subdomains', skip_missing=True) }}"
+  loop: "{{ user_domain_list_pw | subelements('subdomains') }}"
   when:
     - mariadb_save_credentials | bool
     - subdomain_db_passwords is defined
-    - item.1.subdomains is defined
-    - item.1.subdomains | length > 0
   tags: [mariadb, credentials]
 
 # =============================================================================
