@@ -160,18 +160,24 @@
   no_log: true
   tags: [mariadb, users]
 
-- name: Generate database passwords for subdomains
+- name: Build list of domains with subdomains (for password generation)
   ansible.builtin.set_fact:
-    subdomain_db_passwords: >-
-      {{ subdomain_db_passwords | default({}) | combine({
-           item.0.username ~ '_' ~ item.2 ~ '_' ~ item.1.domain:
-             lookup('password', '/dev/null length=32 chars=ascii_letters,digits')
-         }) }}
-  loop: "{{ hosting_users | subelements('domains') | subelements('1.subdomains', skip_missing=True) }}"
+    user_domain_list_pw: "{{ user_domain_list_pw | default([]) + [{'user': item.0, 'domain': item.1, 'subdomains': item.1.subdomains}] }}"
+  loop: "{{ hosting_users | subelements('domains') }}"
   when:
     - mariadb_create_users | bool
     - item.1.subdomains is defined
     - item.1.subdomains | length > 0
+  tags: [mariadb, users]
+
+- name: Generate database passwords for subdomains
+  ansible.builtin.set_fact:
+    subdomain_db_passwords: >-
+      {{ subdomain_db_passwords | default({}) | combine({
+           item.0.user.username ~ '_' ~ item.1 ~ '_' ~ item.0.domain.domain:
+             lookup('password', '/dev/null length=32 chars=ascii_letters,digits')
+         }) }}
+  loop: "{{ user_domain_list_pw | subelements('subdomains') }}"
   no_log: true
   tags: [mariadb, users]
 
