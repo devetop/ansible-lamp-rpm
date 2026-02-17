@@ -184,7 +184,7 @@
 - name: Create database user for each main domain
   community.mysql.mysql_user:
     name: >-
-      {{ item.0.username ~ '_' ~ item.1.domain
+      {{ (item.0.username ~ '_' ~ item.1.domain)
          | regex_replace('[^a-zA-Z0-9]', '_')
          | truncate(16, True, '') }}
     password: "{{ domain_db_passwords[item.0.username ~ '_' ~ item.1.domain] }}"
@@ -195,7 +195,6 @@
     login_user: root
     login_password: "{{ mariadb_root_password }}"
   loop: "{{ hosting_users | subelements('domains', skip_missing=True) }}"
-  # Guard: flag must be true AND password dict must already be populated
   when:
     - mariadb_create_users | bool
     - domain_db_passwords is defined
