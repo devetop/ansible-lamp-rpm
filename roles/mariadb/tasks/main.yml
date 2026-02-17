@@ -194,8 +194,9 @@
     login_user: root
     login_password: "{{ mariadb_root_password }}"
     query: "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA"
+    return_as_dict: true                     # <--- Tambahkan baris ini
   register: _existing_databases_raw
-  changed_when: false        # read-only query — never a change
+  changed_when: false
   tags: [mariadb, databases, users, preflight]
 
 - name: Query existing database users from mysql.user
@@ -203,6 +204,7 @@
     login_user: root
     login_password: "{{ mariadb_root_password }}"
     query: "SELECT User FROM mysql.user"
+    return_as_dict: true                     # <--- Tambahkan baris ini
   register: _existing_users_raw
   changed_when: false        # read-only query — never a change
   tags: [mariadb, databases, users, preflight]
