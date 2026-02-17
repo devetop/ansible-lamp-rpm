@@ -27,7 +27,8 @@ mariadb_collation: utf8mb4_unicode_ci
 # Database naming patterns
 # Used internally for creating database and user names
 db_name_pattern: "{{ username }}_{{ domain | regex_replace('[^a-zA-Z0-9]', '_') }}"
-db_user_pattern: "{{ username }}_{{ domain | regex_replace('[^a-zA-Z0-9]', '_') | truncate(16, True, '') }}"
+# db_user max length is driven by mariadb_username_max_length (defaults/main.yml)
+db_user_pattern: "{{ (username ~ '_' ~ (domain | regex_replace('[^a-zA-Z0-9]', '_')))[:mariadb_username_max_length | int] }}"
 
 # MySQL username length limit
 mysql_username_max_length: 16

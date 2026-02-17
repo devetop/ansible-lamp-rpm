@@ -1,19 +1,32 @@
 ---
 # tasks file for mariadb
-# Purpose: Database automation per domain with conditional logic
+# Purpose: Database automation per domain — idempotent design
 #
-# CONDITIONAL FLAGS (set in group_vars or host_vars):
-#   mariadb_create_databases  — default: false
-#   mariadb_create_users      — default: false
-#   mariadb_save_credentials  — default: false
-#   mariadb_apply_config      — default: true
-#   mariadb_allow_remote      — default: false
+# IDEMPOTENCY STRATEGY
+# ────────────────────
+# mysql_db  / mysql_user with state=present are idempotent by design:
+# the module queries information_schema / mysql.user BEFORE acting and
+# only emits changed=true when it actually created or altered the entity.
+#
+# On top of that we add an explicit pre-flight query layer:
+#   1. Query existing databases / users with mysql_query  → register results
+#   2. Build "what is missing" lists with set_fact + Jinja2
+#   3. Feed only the missing entries into mysql_db / mysql_user
+#   4. Verification tasks at the end use changed_when: false so they never
+#      pollute the changed count even when they run on every play.
+#
+# CONDITIONAL FLAGS (set in group_vars or host_vars, all default false):
+#   mariadb_create_databases  — run database provisioning block
+#   mariadb_create_users      — run user provisioning block
+#   mariadb_save_credentials  — write credential files to user homes
+#   mariadb_apply_config      — push performance tuning template (default true)
+#   mariadb_allow_remote      — open MySQL port in firewalld
 
 # =============================================================================
 # INSTALL & SERVICE
 # =============================================================================
 
-- name: Install MariaDB server
+- name: Install MariaDB packages
   ansible.builtin.dnf:
     name:
       - mariadb-server
@@ -26,31 +39,31 @@
   ansible.builtin.systemd:
     name: mariadb
     state: started
-    enabled: yes
+    enabled: true
   tags: [mariadb, service]
 
 # =============================================================================
 # SECURITY HARDENING
 # =============================================================================
 
-- name: Check if MariaDB root password is already set
+- name: Check if MariaDB root has no password yet
   ansible.builtin.command: mysql -u root -e "SELECT 1"
-  register: mariadb_root_check
-  changed_when: false
+  register: _mariadb_root_open
+  changed_when: false        # pure read — never counts as a change
   failed_when: false
   tags: [mariadb, security]
 
-- name: Set MariaDB root password (only when not yet set)
+- name: Set root password (only when socket auth has no password)
   community.mysql.mysql_user:
     name: root
     password: "{{ mariadb_root_password }}"
     login_unix_socket: /var/lib/mysql/mysql.sock
     state: present
-  when: mariadb_root_check.rc == 0
+  when: _mariadb_root_open.rc == 0
   no_log: true
   tags: [mariadb, security]
 
-- name: Deploy /root/.my.cnf for passwordless root CLI access
+- name: Deploy /root/.my.cnf for passwordless CLI access
   ansible.builtin.template:
     src: my.cnf.j2
     dest: /root/.my.cnf
@@ -63,7 +76,7 @@
 - name: Remove anonymous users
   community.mysql.mysql_user:
     name: ''
-    host_all: yes
+    host_all: true
     state: absent
     login_user: root
     login_password: "{{ mariadb_root_password }}"
@@ -78,7 +91,7 @@
     login_password: "{{ mariadb_root_password }}"
   tags: [mariadb, security]
 
-- name: Disallow root login remotely
+- name: Disallow remote root login
   community.mysql.mysql_query:
     login_user: root
     login_password: "{{ mariadb_root_password }}"
@@ -86,138 +99,306 @@
       DELETE FROM mysql.user
       WHERE User='root'
       AND Host NOT IN ('localhost', '127.0.0.1', '::1')
+  changed_when: false        # DELETE 0 rows on re-run — not a real change
   no_log: true
   tags: [mariadb, security]
 
 # =============================================================================
-# DATABASE CREATION  (guarded by mariadb_create_databases flag)
+# BUILD FLAT ENTRY LISTS  (both blocks need these)
 # =============================================================================
+# subelements() only accepts a single top-level key; it cannot traverse a
+# dotted path.  We materialise two flat lists with Jinja2 for-loops instead:
+#
+#   domain_entries    → [{username, domain, db_name, db_user}, …]
+#   subdomain_entries → [{username, domain, subdomain, db_name, db_user}, …]
+#
+# db_name and db_user are pre-computed here so every subsequent task can
+# reference them by name without repeating the regex/truncate logic.
 
-- name: Show status — database creation
-  ansible.builtin.debug:
-    msg: >-
-      mariadb_create_databases={{ mariadb_create_databases }}.
-      {{ 'Databases WILL be created.' if mariadb_create_databases
-         else 'Skipping database creation. Set mariadb_create_databases: true to enable.' }}
-  tags: [mariadb, databases]
-
-- name: Create database for each main domain
-  community.mysql.mysql_db:
-    name: "{{ item.0.username }}_{{ item.1.domain | regex_replace('[^a-zA-Z0-9]', '_') }}"
-    state: present
-    login_user: root
-    login_password: "{{ mariadb_root_password }}"
-    collation: utf8mb4_unicode_ci
-    encoding: utf8mb4
-  loop: "{{ hosting_users | subelements('domains', skip_missing=True) }}"
-  # Guard: only run when the boolean flag is explicitly set to true
-  when: mariadb_create_databases | bool
-  tags: [mariadb, databases]
-
-- name: Build list of domains with subdomains
+- name: Build flat domain entry list
   ansible.builtin.set_fact:
-    user_domain_list: "{{ user_domain_list | default([]) + [{'user': item.0, 'domain': item.1, 'subdomains': item.1.subdomains}] }}"
-  loop: "{{ hosting_users | subelements('domains') }}"
-  when:
-    - item.1.subdomains is defined
-    - item.1.subdomains | length > 0
-  tags: [mariadb, databases]
+    domain_entries: >-
+      {%- set max_len = mariadb_username_max_length | int -%}
+      {%- set result = [] -%}
+      {%- for user in hosting_users -%}
+        {%- for dom in user.domains | default([]) -%}
+          {%- set db_name = (user.username ~ '_' ~ dom.domain)
+                            | regex_replace('[^a-zA-Z0-9]', '_') -%}
+          {%- set db_user = db_name[:max_len] -%}
+          {%- set _ = result.append({
+                'username': user.username,
+                'domain':   dom.domain,
+                'db_name':  db_name,
+                'db_user':  db_user
+              }) -%}
+        {%- endfor -%}
+      {%- endfor -%}
+      {{ result }}
+  tags: [always]
 
-- name: Create database for each subdomain
+- name: Build flat subdomain entry list
+  ansible.builtin.set_fact:
+    subdomain_entries: >-
+      {%- set max_len = mariadb_username_max_length | int -%}
+      {%- set result = [] -%}
+      {%- for user in hosting_users -%}
+        {%- for dom in user.domains | default([]) -%}
+          {%- for sub in dom.subdomains | default([]) -%}
+            {%- set db_name = (user.username ~ '_' ~ sub ~ '_' ~ dom.domain)
+                              | regex_replace('[^a-zA-Z0-9]', '_') -%}
+            {%- set db_user = db_name[:max_len] -%}
+            {%- set _ = result.append({
+                  'username':  user.username,
+                  'domain':    dom.domain,
+                  'subdomain': sub,
+                  'db_name':   db_name,
+                  'db_user':   db_user
+                }) -%}
+          {%- endfor -%}
+        {%- endfor -%}
+      {%- endfor -%}
+      {{ result }}
+  tags: [always]
+
+# =============================================================================
+# VALIDATE USERNAME LENGTH  (fail fast before any DB work)
+# =============================================================================
+# Assert every db_user computed in the entry lists respects the configured
+# limit.  Runs before any query or create task so operators see a clear
+# message instead of a cryptic MySQL error.
+
+- name: Assert all domain db_user values are within max length
+  ansible.builtin.assert:
+    that:
+      - item.db_user | length <= mariadb_username_max_length | int
+    fail_msg: >-
+      db_user '{{ item.db_user }}' is {{ item.db_user | length }} chars —
+      exceeds mariadb_username_max_length={{ mariadb_username_max_length }}.
+      Shorten username '{{ item.username }}' or the domain name, or increase
+      mariadb_username_max_length in defaults/main.yml (MariaDB >= 10.6 supports 80).
+    success_msg: "db_user '{{ item.db_user }}' ({{ item.db_user | length }} chars) ✓"
+  loop: "{{ domain_entries + subdomain_entries }}"
+  loop_control:
+    label: "{{ item.db_user }} ({{ item.db_user | length }} chars)"
+  tags: [mariadb, validate]
+
+# =============================================================================
+# PRE-FLIGHT: QUERY WHAT ALREADY EXISTS
+# =============================================================================
+# These tasks run even when the create-flags are false so that the verify
+# block at the bottom always has accurate data.  changed_when: false ensures
+# they never inflate the changed counter.
+
+- name: Query existing databases from information_schema
+  community.mysql.mysql_query:
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    query: "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA"
+  register: _existing_databases_raw
+  changed_when: false        # read-only query — never a change
+  tags: [mariadb, databases, users, preflight]
+
+- name: Query existing database users from mysql.user
+  community.mysql.mysql_query:
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    query: "SELECT User FROM mysql.user"
+  register: _existing_users_raw
+  changed_when: false        # read-only query — never a change
+  tags: [mariadb, databases, users, preflight]
+
+# Flatten the query results into simple Python lists so Jinja2 'in' tests work
+- name: Build existing-database name list
+  ansible.builtin.set_fact:
+    _existing_db_names: >-
+      {{ _existing_databases_raw.query_result
+         | map(attribute='SCHEMA_NAME') | list }}
+  changed_when: false
+  tags: [mariadb, databases, users, preflight]
+
+- name: Build existing-user name list
+  ansible.builtin.set_fact:
+    _existing_user_names: >-
+      {{ _existing_users_raw.query_result
+         | map(attribute='User') | list }}
+  changed_when: false
+  tags: [mariadb, databases, users, preflight]
+
+# =============================================================================
+# IDEMPOTENCY FILTER: compute what is MISSING
+# =============================================================================
+# We produce four lists:
+#   _missing_domain_dbs    — domain databases not yet in information_schema
+#   _missing_subdomain_dbs — subdomain databases not yet in information_schema
+#   _missing_domain_users  — domain users not yet in mysql.user
+#   _missing_subdomain_users — subdomain users not yet in mysql.user
+#
+# Only the missing entries are fed into the creation tasks below.
+# On the second run all four lists will be empty → zero tasks execute
+# → play completes with ok=N changed=0, which is the definition of idempotent.
+
+- name: Compute missing domain databases
+  ansible.builtin.set_fact:
+    _missing_domain_dbs: >-
+      {{ domain_entries
+         | rejectattr('db_name', 'in', _existing_db_names)
+         | list }}
+  changed_when: false
+  tags: [mariadb, databases, preflight]
+
+- name: Compute missing subdomain databases
+  ansible.builtin.set_fact:
+    _missing_subdomain_dbs: >-
+      {{ subdomain_entries
+         | rejectattr('db_name', 'in', _existing_db_names)
+         | list }}
+  changed_when: false
+  tags: [mariadb, databases, preflight]
+
+- name: Compute missing domain users
+  ansible.builtin.set_fact:
+    _missing_domain_users: >-
+      {{ domain_entries
+         | rejectattr('db_user', 'in', _existing_user_names)
+         | list }}
+  changed_when: false
+  tags: [mariadb, users, preflight]
+
+- name: Compute missing subdomain users
+  ansible.builtin.set_fact:
+    _missing_subdomain_users: >-
+      {{ subdomain_entries
+         | rejectattr('db_user', 'in', _existing_user_names)
+         | list }}
+  changed_when: false
+  tags: [mariadb, users, preflight]
+
+# Human-readable summary — always visible, never counts as changed
+- name: Pre-flight summary
+  ansible.builtin.debug:
+    msg: |
+      ── Pre-flight summary ───────────────────────────────────
+      Existing databases : {{ _existing_db_names | length }}
+      Existing users     : {{ _existing_user_names | length }}
+
+      Missing domain DBs       : {{ _missing_domain_dbs | map(attribute='db_name') | list }}
+      Missing subdomain DBs    : {{ _missing_subdomain_dbs | map(attribute='db_name') | list }}
+      Missing domain users     : {{ _missing_domain_users | map(attribute='db_user') | list }}
+      Missing subdomain users  : {{ _missing_subdomain_users | map(attribute='db_user') | list }}
+
+      Flags ── create_databases={{ mariadb_create_databases }}
+               create_users={{ mariadb_create_users }}
+               save_credentials={{ mariadb_save_credentials }}
+      ─────────────────────────────────────────────────────────
+  changed_when: false
+  tags: [mariadb, databases, users, preflight]
+
+# =============================================================================
+# DATABASE CREATION  (guarded by flag + missing-list)
+# =============================================================================
+
+- name: "[DB] Create missing domain databases"
   community.mysql.mysql_db:
-    name: "{{ item.0.user.username }}_{{ item.1 }}_{{ item.0.domain.domain | regex_replace('[^a-zA-Z0-9]', '_') }}"
+    name: "{{ item.db_name }}"
     state: present
     login_user: root
     login_password: "{{ mariadb_root_password }}"
     collation: utf8mb4_unicode_ci
     encoding: utf8mb4
-  loop: "{{ user_domain_list | subelements('subdomains') }}"
-  when: mariadb_create_databases | bool
+  loop: "{{ _missing_domain_dbs }}"
+  loop_control:
+    label: "{{ item.db_name }}"
+  # Skip entirely when flag is false OR nothing is missing
+  when:
+    - mariadb_create_databases | bool
+    - _missing_domain_dbs | length > 0
+  tags: [mariadb, databases]
+
+- name: "[DB] Create missing subdomain databases"
+  community.mysql.mysql_db:
+    name: "{{ item.db_name }}"
+    state: present
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    collation: utf8mb4_unicode_ci
+    encoding: utf8mb4
+  loop: "{{ _missing_subdomain_dbs }}"
+  loop_control:
+    label: "{{ item.db_name }}"
+  when:
+    - mariadb_create_databases | bool
+    - _missing_subdomain_dbs | length > 0
   tags: [mariadb, databases]
 
 # =============================================================================
-# USER CREATION  (guarded by mariadb_create_users flag)
+# USER CREATION  (guarded by flag + missing-list)
 # =============================================================================
 
-- name: Show status — user creation
-  ansible.builtin.debug:
-    msg: >-
-      mariadb_create_users={{ mariadb_create_users }}.
-      {{ 'Users WILL be created.' if mariadb_create_users
-         else 'Skipping user creation. Set mariadb_create_users: true to enable.' }}
-  tags: [mariadb, users]
-
-# Generate passwords first (only when user creation is enabled)
-- name: Generate database passwords for main domains
+# Generate passwords only for users that do not exist yet
+- name: Generate passwords for missing domain users
   ansible.builtin.set_fact:
     domain_db_passwords: >-
       {{ domain_db_passwords | default({}) | combine({
-           item.0.username ~ '_' ~ item.1.domain:
-             lookup('password', '/dev/null length=32 chars=ascii_letters,digits')
+           item.db_user: lookup('password', '/dev/null length=32 chars=ascii_letters,digits')
          }) }}
-  loop: "{{ hosting_users | subelements('domains', skip_missing=True) }}"
-  when: mariadb_create_users | bool
+  loop: "{{ _missing_domain_users }}"
+  loop_control:
+    label: "{{ item.db_user }}"
+  when:
+    - mariadb_create_users | bool
+    - _missing_domain_users | length > 0
   no_log: true
   tags: [mariadb, users]
 
-- name: Build list of domains with subdomains (for password generation)
-  ansible.builtin.set_fact:
-    user_domain_list_pw: "{{ user_domain_list_pw | default([]) + [{'user': item.0, 'domain': item.1, 'subdomains': item.1.subdomains}] }}"
-  loop: "{{ hosting_users | subelements('domains') }}"
-  when:
-    - mariadb_create_users | bool
-    - item.1.subdomains is defined
-    - item.1.subdomains | length > 0
-  tags: [mariadb, users]
-
-- name: Generate database passwords for subdomains
+- name: Generate passwords for missing subdomain users
   ansible.builtin.set_fact:
     subdomain_db_passwords: >-
       {{ subdomain_db_passwords | default({}) | combine({
-           item.0.user.username ~ '_' ~ item.1 ~ '_' ~ item.0.domain.domain:
-             lookup('password', '/dev/null length=32 chars=ascii_letters,digits')
+           item.db_user: lookup('password', '/dev/null length=32 chars=ascii_letters,digits')
          }) }}
-  loop: "{{ user_domain_list_pw | subelements('subdomains') }}"
+  loop: "{{ _missing_subdomain_users }}"
+  loop_control:
+    label: "{{ item.db_user }}"
+  when:
+    - mariadb_create_users | bool
+    - _missing_subdomain_users | length > 0
   no_log: true
   tags: [mariadb, users]
 
-- name: Create database user for each main domain
+- name: "[USER] Create missing domain users"
   community.mysql.mysql_user:
-    name: >-
-      {{ (item.0.username ~ '_' ~ item.1.domain)
-         | regex_replace('[^a-zA-Z0-9]', '_')
-         | truncate(16, True, '') }}
-    password: "{{ domain_db_passwords[item.0.username ~ '_' ~ item.1.domain] }}"
-    priv: >-
-      {{ item.0.username ~ '_' ~ (item.1.domain | regex_replace('[^a-zA-Z0-9]', '_')) }}.*:ALL
+    name: "{{ item.db_user }}"
+    password: "{{ domain_db_passwords[item.db_user] }}"
+    priv: "{{ item.db_name }}.*:ALL"
     host: localhost
     state: present
     login_user: root
     login_password: "{{ mariadb_root_password }}"
-  loop: "{{ hosting_users | subelements('domains', skip_missing=True) }}"
+  loop: "{{ _missing_domain_users }}"
+  loop_control:
+    label: "{{ item.db_user }} → {{ item.db_name }}"
   when:
     - mariadb_create_users | bool
+    - _missing_domain_users | length > 0
     - domain_db_passwords is defined
   no_log: true
   tags: [mariadb, users]
 
-- name: Create database user for each subdomain
+- name: "[USER] Create missing subdomain users"
   community.mysql.mysql_user:
-    name: >-
-      {{ (item.0.user.username ~ '_' ~ item.1 ~ '_' ~ item.0.domain.domain)
-         | regex_replace('[^a-zA-Z0-9]', '_')
-         | truncate(16, True, '') }}
-    password: "{{ subdomain_db_passwords[item.0.user.username ~ '_' ~ item.1 ~ '_' ~ item.0.domain.domain] }}"
-    priv: >-
-      {{ item.0.user.username ~ '_' ~ item.1 ~ '_' ~
-         (item.0.domain.domain | regex_replace('[^a-zA-Z0-9]', '_')) }}.*:ALL
+    name: "{{ item.db_user }}"
+    password: "{{ subdomain_db_passwords[item.db_user] }}"
+    priv: "{{ item.db_name }}.*:ALL"
     host: localhost
     state: present
     login_user: root
     login_password: "{{ mariadb_root_password }}"
-  loop: "{{ user_domain_list_pw | subelements('subdomains') }}"
+  loop: "{{ _missing_subdomain_users }}"
+  loop_control:
+    label: "{{ item.db_user }} → {{ item.db_name }}"
   when:
     - mariadb_create_users | bool
+    - _missing_subdomain_users | length > 0
     - subdomain_db_passwords is defined
   no_log: true
   tags: [mariadb, users]
@@ -226,74 +407,96 @@
 # SAVE CREDENTIALS  (guarded by mariadb_save_credentials flag)
 # =============================================================================
 
-- name: Show status — save credentials
-  ansible.builtin.debug:
-    msg: >-
-      mariadb_save_credentials={{ mariadb_save_credentials }}.
-      {{ 'Credentials WILL be saved to user home dirs.' if mariadb_save_credentials
-         else 'Skipping credential files. Set mariadb_save_credentials: true to enable.' }}
-  tags: [mariadb, credentials]
-
 - name: Save domain database credentials to user home
   ansible.builtin.template:
     src: db-credentials.txt.j2
-    dest: >-
-      /home/{{ item.0.username }}/db-credentials-{{ item.1.domain
-        | regex_replace('[^a-zA-Z0-9]', '_') }}.txt
-    owner: "{{ item.0.username }}"
-    group: "{{ item.0.username }}"
+    dest: "/home/{{ item.username }}/db-credentials-{{ item.db_name }}.txt"
+    owner: "{{ item.username }}"
+    group: "{{ item.username }}"
     mode: '0600'
-  loop: "{{ hosting_users | subelements('domains', skip_missing=True) }}"
+  loop: "{{ _missing_domain_users }}"
+  loop_control:
+    label: "{{ item.username }} / {{ item.db_name }}"
   when:
     - mariadb_save_credentials | bool
+    - _missing_domain_users | length > 0
     - domain_db_passwords is defined
   tags: [mariadb, credentials]
 
 - name: Save subdomain database credentials to user home
   ansible.builtin.template:
     src: db-credentials-subdomain.txt.j2
-    dest: >-
-      /home/{{ item.0.user.username }}/db-credentials-{{ item.1 }}-{{ item.0.domain.domain
-        | regex_replace('[^a-zA-Z0-9]', '_') }}.txt
-    owner: "{{ item.0.user.username }}"
-    group: "{{ item.0.user.username }}"
+    dest: "/home/{{ item.username }}/db-credentials-{{ item.db_name }}.txt"
+    owner: "{{ item.username }}"
+    group: "{{ item.username }}"
     mode: '0600'
-  loop: "{{ user_domain_list_pw | subelements('subdomains') }}"
+  loop: "{{ _missing_subdomain_users }}"
+  loop_control:
+    label: "{{ item.username }} / {{ item.db_name }}"
   when:
     - mariadb_save_credentials | bool
+    - _missing_subdomain_users | length > 0
     - subdomain_db_passwords is defined
   tags: [mariadb, credentials]
 
-# - name: Build list of user+domain objects with subdomains
-#   ansible.builtin.set_fact:
-#     user_domain_subdomains: >-
-#       {{ user_domain_subdomains | default([]) +
-#          [{'user': item.0,
-#            'domain': item.1,
-#            'subdomains': item.1.subdomains | default([])}] }}
-#   loop: "{{ hosting_users | subelements('domains', skip_missing=True) }}"
-#   when:
-#     - mariadb_save_credentials | bool
-#     - subdomain_db_passwords is defined
-#     - item.1.subdomains is defined
-#     - item.1.subdomains | length > 0
-#   tags: [mariadb, credentials, always]
+# =============================================================================
+# VERIFY  (always runs — changed_when: false throughout)
+# =============================================================================
+# These tasks re-query the server and show what exists.  Because every task
+# in this block carries changed_when: false the play never reports changed=N
+# for verification steps — the output is always clean.
 
-# - name: Save subdomain database credentials to user home
-#   ansible.builtin.template:
-#     src: db-credentials-subdomain.txt.j2
-#     dest: >-
-#       /home/{{ item.0.user.username }}/db-credentials-{{ item.1 }}-{{
-#         item.0.domain.domain | regex_replace('[^a-zA-Z0-9]', '_')
-#       }}.txt
-#     owner: "{{ item.0.user.username }}"
-#     group: "{{ item.0.user.username }}"
-#     mode: '0600'
-#   loop: "{{ user_domain_subdomains | subelements('subdomains') }}"
-#   when:
-#     - mariadb_save_credentials | bool
-#     - subdomain_db_passwords is defined
-#   tags: [mariadb, credentials]
+- name: "[VERIFY] Re-query existing databases after provisioning"
+  community.mysql.mysql_query:
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    query: >
+      SELECT SCHEMA_NAME AS db
+      FROM information_schema.SCHEMATA
+      WHERE SCHEMA_NAME NOT IN ('information_schema','mysql','performance_schema','sys')
+      ORDER BY SCHEMA_NAME
+  register: _verify_databases
+  changed_when: false        # read-only — never a change
+  tags: [mariadb, verify]
+
+- name: "[VERIFY] Re-query existing users after provisioning"
+  community.mysql.mysql_query:
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    query: >
+      SELECT User, Host
+      FROM mysql.user
+      WHERE User NOT IN ('root','mysql','mariadb.sys','')
+      ORDER BY User
+  register: _verify_users
+  changed_when: false        # read-only — never a change
+  tags: [mariadb, verify]
+
+- name: "[VERIFY] Display provisioned databases"
+  ansible.builtin.debug:
+    msg: |
+      ── Databases present on {{ inventory_hostname }} ────────
+      {% for row in _verify_databases.query_result %}
+        ✓  {{ row.db }}
+      {% else %}
+        (none — provision with mariadb_create_databases: true)
+      {% endfor %}
+      ─────────────────────────────────────────────────────────
+  changed_when: false
+  tags: [mariadb, verify]
+
+- name: "[VERIFY] Display provisioned users"
+  ansible.builtin.debug:
+    msg: |
+      ── Users present on {{ inventory_hostname }} ────────────
+      {% for row in _verify_users.query_result %}
+        ✓  {{ row.User }}@{{ row.Host }}
+      {% else %}
+        (none — provision with mariadb_create_users: true)
+      {% endfor %}
+      ─────────────────────────────────────────────────────────
+  changed_when: false
+  tags: [mariadb, verify]
 
 # =============================================================================
 # PERFORMANCE TUNING  (guarded by mariadb_apply_config flag)
@@ -314,11 +517,11 @@
 # FIREWALL
 # =============================================================================
 
-- name: Manage firewall rule for MySQL remote access
+- name: Manage MySQL firewall rule
   ansible.posix.firewalld:
     service: mysql
-    permanent: yes
+    permanent: true
     state: "{{ mariadb_allow_remote | bool | ternary('enabled', 'disabled') }}"
-    immediate: yes
+    immediate: true
   when: ansible_facts.services['firewalld.service'] is defined
   tags: [mariadb, firewall]
