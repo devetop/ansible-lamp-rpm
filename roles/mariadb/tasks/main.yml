@@ -183,250 +183,137 @@
   tags: [mariadb, validate]
 
 # =============================================================================
-# PRE-FLIGHT: QUERY WHAT ALREADY EXISTS
+# PASSWORD GENERATION STRATEGY (FILE-BASED IDEMPOTENCY)
 # =============================================================================
-
-- name: Query existing databases from information_schema
-  community.mysql.mysql_query:
-    login_user: root
-    login_password: "{{ mariadb_root_password }}"
-    query: "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA"
-  register: _existing_databases_raw
-  changed_when: false
-  tags: [mariadb, databases, users, preflight]
-
-- name: Query existing database users from mysql.user
-  community.mysql.mysql_query:
-    login_user: root
-    login_password: "{{ mariadb_root_password }}"
-    query: "SELECT User FROM mysql.user"
-  register: _existing_users_raw
-  changed_when: false
-  tags: [mariadb, databases, users, preflight]
-
-# PERBAIKAN 1: Gunakan map('first') karena hasil query adalah List of Lists [['db1'], ['db2']].
-# PERBAIKAN 2: Tambahkan map('lower') agar semua nama jadi huruf kecil (Case-Insensitive).
-- name: Build existing-database name list
-  ansible.builtin.set_fact:
-    _existing_db_names: >-
-      {{ _existing_databases_raw.query_result 
-         | map('first') 
-         | map('lower') 
-         | list }}
-  changed_when: false
-  tags: [mariadb, databases, users, preflight]
-
-- name: Build existing-user name list
-  ansible.builtin.set_fact:
-    _existing_user_names: >-
-      {{ _existing_users_raw.query_result 
-         | map('first') 
-         | map('lower') 
-         | list }}
-  changed_when: false
-  tags: [mariadb, databases, users, preflight]
-
-# =============================================================================
-# IDEMPOTENCY FILTER: compute what is MISSING
-# =============================================================================
-
-# Karena _existing_user_names sekarang sudah berisi list huruf kecil yang benar,
-# kita bandingkan dengan item yang juga di-lower-kan.
-
-- name: Compute missing domain databases
-  ansible.builtin.set_fact:
-    _missing_domain_dbs: >-
-      {%- set missing = [] -%}
-      {%- for item in domain_entries -%}
-        {%- if (item.db_name | lower) not in _existing_db_names -%}
-          {%- set _ = missing.append(item) -%}
-        {%- endif -%}
-      {%- endfor -%}
-      {{ missing }}
-  changed_when: false
-  tags: [mariadb, databases, preflight]
-
-- name: Compute missing subdomain databases
-  ansible.builtin.set_fact:
-    _missing_subdomain_dbs: >-
-      {%- set missing = [] -%}
-      {%- for item in subdomain_entries -%}
-        {%- if (item.db_name | lower) not in _existing_db_names -%}
-          {%- set _ = missing.append(item) -%}
-        {%- endif -%}
-      {%- endfor -%}
-      {{ missing }}
-  changed_when: false
-  tags: [mariadb, databases, preflight]
-
-- name: Compute missing domain users
-  ansible.builtin.set_fact:
-    _missing_domain_users: >-
-      {%- set missing = [] -%}
-      {%- for item in domain_entries -%}
-        {%- if (item.db_user | lower) not in _existing_user_names -%}
-          {%- set _ = missing.append(item) -%}
-        {%- endif -%}
-      {%- endfor -%}
-      {{ missing }}
-  changed_when: false
-  tags: [mariadb, users, preflight]
-
-- name: Compute missing subdomain users
-  ansible.builtin.set_fact:
-    _missing_subdomain_users: >-
-      {%- set missing = [] -%}
-      {%- for item in subdomain_entries -%}
-        {%- if (item.db_user | lower) not in _existing_user_names -%}
-          {%- set _ = missing.append(item) -%}
-        {%- endif -%}
-      {%- endfor -%}
-      {{ missing }}
-  changed_when: false
-  tags: [mariadb, users, preflight]
-
-# Human-readable summary
-- name: Pre-flight summary
-  ansible.builtin.debug:
-    msg: |
-      ── Pre-flight summary ───────────────────────────────────
-      Existing DBs (Count) : {{ _existing_db_names | length }}
-      Existing Users (Count): {{ _existing_user_names | length }}
-      
-      Missing domain DBs       : {{ _missing_domain_dbs | map(attribute='db_name') | list }}
-      Missing subdomain DBs    : {{ _missing_subdomain_dbs | map(attribute='db_name') | list }}
-      Missing domain users     : {{ _missing_domain_users | map(attribute='db_user') | list }}
-      Missing subdomain users  : {{ _missing_subdomain_users | map(attribute='db_user') | list }}
-      ─────────────────────────────────────────────────────────
-  changed_when: false
-  tags: [mariadb, databases, users, preflight]
-
-# =============================================================================
-# DATABASE CREATION  (guarded by flag + missing-list)
-# =============================================================================
-
-- name: "[DB] Create missing domain databases"
-  community.mysql.mysql_db:
-    name: "{{ item.db_name }}"
-    state: present
-    login_user: root
-    login_password: "{{ mariadb_root_password }}"
-    collation: utf8mb4_unicode_ci
-    encoding: utf8mb4
-  loop: "{{ _missing_domain_dbs }}"
-  loop_control:
-    label: "{{ item.db_name }}"
-  # Skip entirely when flag is false OR nothing is missing
-  when:
-    - mariadb_create_databases | bool
-    - _missing_domain_dbs | length > 0
-  tags: [mariadb, databases]
-
-- name: "[DB] Create missing subdomain databases"
-  community.mysql.mysql_db:
-    name: "{{ item.db_name }}"
-    state: present
-    login_user: root
-    login_password: "{{ mariadb_root_password }}"
-    collation: utf8mb4_unicode_ci
-    encoding: utf8mb4
-  loop: "{{ _missing_subdomain_dbs }}"
-  loop_control:
-    label: "{{ item.db_name }}"
-  when:
-    - mariadb_create_databases | bool
-    - _missing_subdomain_dbs | length > 0
-  tags: [mariadb, databases]
-
-# =============================================================================
-# USER CREATION  (guarded by flag + missing-list)
-# =============================================================================
-
-# Generate passwords only for users that do not exist yet
-- name: Generate passwords for missing domain users
-  ansible.builtin.set_fact:
-    domain_db_passwords: >-
-      {{ domain_db_passwords | default({}) | combine({
-           item.db_user: lookup('password', '/dev/null length=32 chars=ascii_letters,digits')
-         }) }}
-  loop: "{{ _missing_domain_users }}"
-  loop_control:
-    label: "{{ item.db_user }}"
-  when:
-    - mariadb_create_users | bool
-    - _missing_domain_users | length > 0
-  no_log: true
-  tags: [mariadb, users]
-
-- name: Generate passwords for missing subdomain users
-  ansible.builtin.set_fact:
-    subdomain_db_passwords: >-
-      {{ subdomain_db_passwords | default({}) | combine({
-           item.db_user: lookup('password', '/dev/null length=32 chars=ascii_letters,digits')
-         }) }}
-  loop: "{{ _missing_subdomain_users }}"
-  loop_control:
-    label: "{{ item.db_user }}"
-  when:
-    - mariadb_create_users | bool
-    - _missing_subdomain_users | length > 0
-  no_log: true
-  tags: [mariadb, users]
-
-- name: "[USER] Create missing domain users"
-  community.mysql.mysql_user:
-    name: "{{ item.db_user }}"
-    password: "{{ domain_db_passwords[item.db_user] }}"
-    priv: "{{ item.db_name }}.*:ALL"
-    host: localhost
-    state: present
-    login_user: root
-    login_password: "{{ mariadb_root_password }}"
-  loop: "{{ _missing_domain_users }}"
-  loop_control:
-    label: "{{ item.db_user }} → {{ item.db_name }}"
-  when:
-    - mariadb_create_users | bool
-    - _missing_domain_users | length > 0
-    - domain_db_passwords is defined
-  no_log: true
-  tags: [mariadb, users]
-
-- name: "[USER] Create missing subdomain users"
-  community.mysql.mysql_user:
-    name: "{{ item.db_user }}"
-    password: "{{ subdomain_db_passwords[item.db_user] }}"
-    priv: "{{ item.db_name }}.*:ALL"
-    host: localhost
-    state: present
-    login_user: root
-    login_password: "{{ mariadb_root_password }}"
-  loop: "{{ _missing_subdomain_users }}"
-  loop_control:
-    label: "{{ item.db_user }} → {{ item.db_name }}"
-  when:
-    - mariadb_create_users | bool
-    - _missing_subdomain_users | length > 0
-    - subdomain_db_passwords is defined
-  no_log: true
-  tags: [mariadb, users]
-
-# =============================================================================
-# SAVE CREDENTIALS  (guarded by mariadb_save_credentials flag)
-# =============================================================================
+# Kita tidak lagi mendeteksi keberadaan user di database untuk mencegah
+# password reset. Sebagai gantinya, kita melihat apakah file credential
+# sudah ada.
+#   - Jika file ADA: User dianggap sudah ada dengan password yang benar.
+#     Kita TIDAK mengirim parameter password ke mysql_user agar password
+#     di database tidak diubah.
+#   - Jika file TIDAK ADA: User baru dibuat. Password digenerate, file
+#     disimpan, dan password dikirim ke mysql_user.
 
 - name: Check if domain database credentials files exist
   ansible.builtin.stat:
     path: "/home/{{ item.username }}/db-credentials-{{ item.db_name }}.txt"
-  loop: "{{ _missing_domain_users }}"
+  loop: "{{ domain_entries }}"
   register: _domain_creds_stat
   loop_control:
     label: "{{ item.username }} / {{ item.db_name }}"
+  tags: [mariadb, users]
+
+- name: Generate passwords ONLY for new domain users (file missing)
+  ansible.builtin.set_fact:
+    domain_db_passwords: >-
+      {{ domain_db_passwords | default({}) | combine({
+           item.item.db_user: lookup('password', '/dev/null length=32 chars=ascii_letters,digits')
+         }) }}
+  loop: "{{ _domain_creds_stat.results }}"
+  loop_control:
+    label: "{{ item.item.db_user }}"
   when:
-    - mariadb_save_credentials | bool
-    - _missing_domain_users | length > 0
-    - domain_db_passwords is defined
-  tags: [mariadb, credentials]
+    - mariadb_create_users | bool
+    - not item.stat.exists  # Hanya generate jika file BELUM ada
+  no_log: true
+  tags: [mariadb, users]
+
+- name: Check if subdomain database credentials files exist
+  ansible.builtin.stat:
+    path: "/home/{{ item.username }}/db-credentials-{{ item.db_name }}.txt"
+  loop: "{{ subdomain_entries }}"
+  register: _subdomain_creds_stat
+  loop_control:
+    label: "{{ item.username }} / {{ item.db_name }}"
+  tags: [mariadb, users]
+
+- name: Generate passwords ONLY for new subdomain users (file missing)
+  ansible.builtin.set_fact:
+    subdomain_db_passwords: >-
+      {{ subdomain_db_passwords | default({}) | combine({
+           item.item.db_user: lookup('password', '/dev/null length=32 chars=ascii_letters,digits')
+         }) }}
+  loop: "{{ _subdomain_creds_stat.results }}"
+  loop_control:
+    label: "{{ item.item.db_user }}"
+  when:
+    - mariadb_create_users | bool
+    - not item.stat.exists # Hanya generate jika file BELUM ada
+  no_log: true
+  tags: [mariadb, users]
+
+# =============================================================================
+# DATABASE & USER PROVISIONING
+# =============================================================================
+
+# Kita loop ke SELURUH entry, bukan hanya yang missing.
+# mysql_user module akan menangani idempotensi (create jika belum ada).
+
+- name: "[DB] Ensure domain databases exist"
+  community.mysql.mysql_db:
+    name: "{{ item.db_name }}"
+    state: present
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    collation: utf8mb4_unicode_ci
+    encoding: utf8mb4
+  loop: "{{ domain_entries }}"
+  loop_control:
+    label: "{{ item.db_name }}"
+  when: mariadb_create_databases | bool
+  tags: [mariadb, databases]
+
+- name: "[DB] Ensure subdomain databases exist"
+  community.mysql.mysql_db:
+    name: "{{ item.db_name }}"
+    state: present
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    collation: utf8mb4_unicode_ci
+    encoding: utf8mb4
+  loop: "{{ subdomain_entries }}"
+  loop_control:
+    label: "{{ item.db_name }}"
+  when: mariadb_create_databases | bool
+  tags: [mariadb, databases]
+
+- name: "[USER] Ensure domain users exist"
+  community.mysql.mysql_user:
+    name: "{{ item.db_user }}"
+    # TRIK PENTING: Hanya kirim password jika ada di dictionary (artinya user baru/file baru).
+    # Jika user lama, passwordnya di-omit (dikosongkan), sehingga password DB tidak di-reset.
+    password: "{{ domain_db_passwords[item.db_user] | default(omit) }}"
+    priv: "{{ item.db_name }}.*:ALL"
+    host: localhost
+    state: present
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+  loop: "{{ domain_entries }}"
+  loop_control:
+    label: "{{ item.db_user }} → {{ item.db_name }}"
+  when: mariadb_create_users | bool
+  no_log: true
+  tags: [mariadb, users]
+
+- name: "[USER] Ensure subdomain users exist"
+  community.mysql.mysql_user:
+    name: "{{ item.db_user }}"
+    password: "{{ subdomain_db_passwords[item.db_user] | default(omit) }}"
+    priv: "{{ item.db_name }}.*:ALL"
+    host: localhost
+    state: present
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+  loop: "{{ subdomain_entries }}"
+  loop_control:
+    label: "{{ item.db_user }} → {{ item.db_name }}"
+  when: mariadb_create_users | bool
+  no_log: true
+  tags: [mariadb, users]
+
+# =============================================================================
+# SAVE CREDENTIALS
+# =============================================================================
 
 - name: Save domain database credentials to user home
   ansible.builtin.template:
@@ -435,28 +322,12 @@
     owner: "{{ item.username }}"
     group: "{{ item.username }}"
     mode: '0600'
-  loop: "{{ _missing_domain_users }}"
-  loop_control:
-    label: "{{ item.username }} / {{ item.db_name }}"
-    extended: yes
-  when:
-    - mariadb_save_credentials | bool
-    - _missing_domain_users | length > 0
-    - domain_db_passwords is defined
-    - not _domain_creds_stat.results[ansible_loop.index0].stat.exists
-  tags: [mariadb, credentials]
-
-- name: Check if subdomain database credentials files exist
-  ansible.builtin.stat:
-    path: "/home/{{ item.username }}/db-credentials-{{ item.db_name }}.txt"
-  loop: "{{ _missing_subdomain_users }}"
-  register: _subdomain_creds_stat
+  loop: "{{ domain_entries }}"
   loop_control:
     label: "{{ item.username }} / {{ item.db_name }}"
   when:
     - mariadb_save_credentials | bool
-    - _missing_subdomain_users | length > 0
-    - subdomain_db_passwords is defined
+    - domain_db_passwords[item.db_user] is defined # Hanya simpan jika baru digenerate
   tags: [mariadb, credentials]
 
 - name: Save subdomain database credentials to user home
@@ -466,15 +337,12 @@
     owner: "{{ item.username }}"
     group: "{{ item.username }}"
     mode: '0600'
-  loop: "{{ _missing_subdomain_users }}"
+  loop: "{{ subdomain_entries }}"
   loop_control:
     label: "{{ item.username }} / {{ item.db_name }}"
-    extended: yes
   when:
     - mariadb_save_credentials | bool
-    - _missing_subdomain_users | length > 0
-    - subdomain_db_passwords is defined
-    - not _subdomain_creds_stat.results[ansible_loop.index0].stat.exists
+    - subdomain_db_passwords[item.db_user] is defined
   tags: [mariadb, credentials]
 
 # =============================================================================
