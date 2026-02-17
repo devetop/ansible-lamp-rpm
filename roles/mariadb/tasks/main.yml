@@ -250,36 +250,51 @@
     - domain_db_passwords is defined
   tags: [mariadb, credentials]
 
-- name: Build list of user+domain objects with subdomains
-  ansible.builtin.set_fact:
-    user_domain_subdomains: >-
-      {{ user_domain_subdomains | default([]) +
-         [{'user': item.0,
-           'domain': item.1,
-           'subdomains': item.1.subdomains | default([])}] }}
-  loop: "{{ hosting_users | subelements('domains', skip_missing=True) }}"
-  when:
-    - mariadb_save_credentials | bool
-    - subdomain_db_passwords is defined
-    - item.1.subdomains is defined
-    - item.1.subdomains | length > 0
-  tags: [mariadb, credentials, always]
-
 - name: Save subdomain database credentials to user home
   ansible.builtin.template:
     src: db-credentials-subdomain.txt.j2
     dest: >-
-      /home/{{ item.0.user.username }}/db-credentials-{{ item.1 }}-{{
-        item.0.domain.domain | regex_replace('[^a-zA-Z0-9]', '_')
-      }}.txt
+      /home/{{ item.0.user.username }}/db-credentials-{{ item.1 }}-{{ item.0.domain.domain
+        | regex_replace('[^a-zA-Z0-9]', '_') }}.txt
     owner: "{{ item.0.user.username }}"
     group: "{{ item.0.user.username }}"
     mode: '0600'
-  loop: "{{ user_domain_subdomains | subelements('subdomains') }}"
+  loop: "{{ user_domain_list_pw | subelements('subdomains') }}"
   when:
     - mariadb_save_credentials | bool
     - subdomain_db_passwords is defined
   tags: [mariadb, credentials]
+
+# - name: Build list of user+domain objects with subdomains
+#   ansible.builtin.set_fact:
+#     user_domain_subdomains: >-
+#       {{ user_domain_subdomains | default([]) +
+#          [{'user': item.0,
+#            'domain': item.1,
+#            'subdomains': item.1.subdomains | default([])}] }}
+#   loop: "{{ hosting_users | subelements('domains', skip_missing=True) }}"
+#   when:
+#     - mariadb_save_credentials | bool
+#     - subdomain_db_passwords is defined
+#     - item.1.subdomains is defined
+#     - item.1.subdomains | length > 0
+#   tags: [mariadb, credentials, always]
+
+# - name: Save subdomain database credentials to user home
+#   ansible.builtin.template:
+#     src: db-credentials-subdomain.txt.j2
+#     dest: >-
+#       /home/{{ item.0.user.username }}/db-credentials-{{ item.1 }}-{{
+#         item.0.domain.domain | regex_replace('[^a-zA-Z0-9]', '_')
+#       }}.txt
+#     owner: "{{ item.0.user.username }}"
+#     group: "{{ item.0.user.username }}"
+#     mode: '0600'
+#   loop: "{{ user_domain_subdomains | subelements('subdomains') }}"
+#   when:
+#     - mariadb_save_credentials | bool
+#     - subdomain_db_passwords is defined
+#   tags: [mariadb, credentials]
 
 # =============================================================================
 # PERFORMANCE TUNING  (guarded by mariadb_apply_config flag)
