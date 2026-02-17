@@ -1,56 +1,89 @@
 ---
 # defaults file for mariadb
 
-# MariaDB root password (OVERRIDE THIS IN YOUR VAULT!)
+# =============================================================================
+# AUTHENTICATION
+# =============================================================================
+# MariaDB root password — OVERRIDE in group_vars vault!
 mariadb_root_password: "ChangeMeToSecurePassword123!"
 
-# Connection Settings
+# =============================================================================
+# CONDITIONAL FLAGS  (boolean — all default to false for safety)
+# =============================================================================
+
+# Create databases per domain/subdomain.
+# Set to true on first deploy or when adding new domains.
+mariadb_create_databases: false
+
+# Create database users per domain/subdomain.
+# Requires mariadb_create_databases: true (or databases already exist).
+mariadb_create_users: false
+
+# Save database credentials to each user's home directory.
+# Only useful when mariadb_create_users: true.
+mariadb_save_credentials: false
+
+# Apply the performance tuning template to /etc/my.cnf.d/
+# Set to false to preserve any manually tuned configuration.
+mariadb_apply_config: true
+
+# Open MySQL port via firewalld for remote connections.
+mariadb_allow_remote: false
+
+# =============================================================================
+# CONNECTION SETTINGS
+# =============================================================================
 mariadb_max_connections: 200
 mariadb_max_connect_errors: 1000
 mariadb_wait_timeout: 300
 mariadb_interactive_timeout: 300
 
-# Buffer Pool Settings
+# =============================================================================
+# INNODB / BUFFER POOL
+# =============================================================================
 mariadb_innodb_buffer_pool_size: "1G"
 mariadb_innodb_buffer_pool_instances: 4
 mariadb_innodb_log_file_size: "256M"
 mariadb_innodb_log_buffer_size: "16M"
+mariadb_innodb_flush_log_at_trx_commit: 2
 
-# Query Cache Settings
+# =============================================================================
+# QUERY CACHE
+# =============================================================================
 mariadb_query_cache_type: 1
 mariadb_query_cache_size: "64M"
 mariadb_query_cache_limit: "2M"
 
-# Table Cache
+# =============================================================================
+# TABLE / THREAD CACHE
+# =============================================================================
 mariadb_table_open_cache: 4000
 mariadb_table_definition_cache: 2000
-
-# Thread Settings
 mariadb_thread_cache_size: 50
 
-# Sort and Join Buffers
+# =============================================================================
+# SORT / JOIN BUFFERS
+# =============================================================================
 mariadb_sort_buffer_size: "2M"
 mariadb_read_buffer_size: "1M"
 mariadb_read_rnd_buffer_size: "2M"
 mariadb_join_buffer_size: "2M"
 
-# Temporary Tables
+# =============================================================================
+# TEMPORARY TABLES
+# =============================================================================
 mariadb_tmp_table_size: "64M"
 mariadb_max_heap_table_size: "64M"
 
-# Logging
+# =============================================================================
+# LOGGING
+# =============================================================================
 mariadb_slow_query_log: 1
 mariadb_long_query_time: 2
 mariadb_log_queries_not_using_indexes: 0
 
-# InnoDB Settings
-mariadb_innodb_flush_log_at_trx_commit: 2
-
-# Performance Schema
+# =============================================================================
+# MISC
+# =============================================================================
 mariadb_performance_schema: "OFF"
-
-# Max Allowed Packet
 mariadb_max_allowed_packet: "64M"
-
-# Allow remote connections (default: false)
-mariadb_allow_remote: false

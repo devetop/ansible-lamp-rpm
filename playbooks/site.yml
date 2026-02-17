@@ -16,6 +16,34 @@
           Architecture: {{ ansible_architecture }}
       tags: [always]
     
+    - name: Validate required variables are defined
+      ansible.builtin.assert:
+        that:
+          - hosting_users is defined
+          - mariadb_root_password is defined
+        fail_msg: |
+          ERROR: Required variables are not defined!
+          
+          Please ensure you have configured:
+          1. group_vars/webservers.yml with 'hosting_users' list
+          2. group_vars/webservers.yml with 'mariadb_root_password'
+          
+          Example minimal configuration:
+          ---
+          hosting_users:
+            - username: testuser
+              php_versions: ["8.2"]
+              domains:
+                - domain: example.com
+                  php_version: "8.2"
+                  subdomains: []
+          
+          mariadb_root_password: "YourSecurePassword123!"
+          
+          Or copy from: group_vars/webservers.yml.example
+        success_msg: "Required variables are defined"
+      tags: [always]
+    
     - name: Verify RHEL family
       ansible.builtin.assert:
         that:

@@ -1,0 +1,35 @@
+---
+# host_vars/web01.example.com.yml
+#
+# Per-host variable overrides for web01.
+#
+# PURPOSE: Use this file to temporarily enable database / user provisioning
+# for a specific host without touching the shared group_vars.
+#
+# WORKFLOW:
+#   1. Set the flags you need to true.
+#   2. Run:  ansible-playbook site.yml -l web01.example.com --tags mariadb
+#   3. Set all flags back to false.
+#   4. Commit the change to version control.
+#
+# This ensures databases are only created intentionally, never accidentally
+# overwritten during a routine full-stack run.
+
+# ── Database provisioning flags ──────────────────────────────────────────────
+
+# Create databases for all domains / subdomains on this host
+mariadb_create_databases: false   # ← set true to provision, then reset to false
+
+# Create database users (requires databases to already exist)
+mariadb_create_users: false       # ← set true to provision, then reset to false
+
+# Write credential files to each user's home directory
+mariadb_save_credentials: false   # ← set true after users are created
+
+# ── Other host-specific overrides (optional) ─────────────────────────────────
+
+# Larger buffer pool if this host has more RAM
+# mariadb_innodb_buffer_pool_size: "4G"
+
+# Increase connections on a busier host
+# mariadb_max_connections: 500

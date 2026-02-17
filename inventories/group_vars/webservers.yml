@@ -87,6 +87,32 @@ hosting_users:
 
 mariadb_root_password: "StrongRootPassword123!ChangeMe"
 
+# -----------------------------------------------------------------------------
+# CONDITIONAL FLAGS
+# Default values are set in roles/mariadb/defaults/main.yml (all false).
+# Override here in group_vars, or per-host in host_vars/.
+#
+# Typical workflow:
+#   1st deploy  → set all three to true, run playbook, then set back to false.
+#   Add domain  → set to true, run playbook with --tags mariadb, set to false.
+#   Routine run → leave all false so existing DBs/users are never touched.
+# -----------------------------------------------------------------------------
+
+# Set true to CREATE databases per domain / subdomain
+mariadb_create_databases: false
+
+# Set true to CREATE database users per domain / subdomain
+mariadb_create_users: false
+
+# Set true to WRITE credential files to /home/<user>/
+mariadb_save_credentials: false
+
+# Set true to push the performance-tuning template to /etc/my.cnf.d/
+mariadb_apply_config: true
+
+# Set true to open MySQL port via firewalld (remote access)
+mariadb_allow_remote: false
+
 # MariaDB Performance Tuning (adjust based on server resources)
 mariadb_max_connections: 300
 mariadb_innodb_buffer_pool_size: "2G"  # 50-70% of available RAM

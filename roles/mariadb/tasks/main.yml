@@ -1,6 +1,17 @@
 ---
 # tasks file for mariadb
-# Purpose: Database automation per domain
+# Purpose: Database automation per domain with conditional logic
+#
+# CONDITIONAL FLAGS (set in group_vars or host_vars):
+#   mariadb_create_databases  — default: false
+#   mariadb_create_users      — default: false
+#   mariadb_save_credentials  — default: false
+#   mariadb_apply_config      — default: true
+#   mariadb_allow_remote      — default: false
+
+# =============================================================================
+# INSTALL & SERVICE
+# =============================================================================
 
 - name: Install MariaDB server
   ansible.builtin.dnf:
@@ -18,24 +29,28 @@
     enabled: yes
   tags: [mariadb, service]
 
-- name: Check if MariaDB root password is set
+# =============================================================================
+# SECURITY HARDENING
+# =============================================================================
+
+- name: Check if MariaDB root password is already set
   ansible.builtin.command: mysql -u root -e "SELECT 1"
-  register: mysql_root_check
+  register: mariadb_root_check
   changed_when: false
   failed_when: false
   tags: [mariadb, security]
 
-- name: Set MariaDB root password
+- name: Set MariaDB root password (only when not yet set)
   community.mysql.mysql_user:
     name: root
     password: "{{ mariadb_root_password }}"
     login_unix_socket: /var/lib/mysql/mysql.sock
     state: present
-  when: mysql_root_check.rc == 0
+  when: mariadb_root_check.rc == 0
   no_log: true
   tags: [mariadb, security]
 
-- name: Create /root/.my.cnf with root credentials
+- name: Deploy /root/.my.cnf for passwordless root CLI access
   ansible.builtin.template:
     src: my.cnf.j2
     dest: /root/.my.cnf
@@ -67,11 +82,26 @@
   community.mysql.mysql_query:
     login_user: root
     login_password: "{{ mariadb_root_password }}"
-    query: DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1')
+    query: >
+      DELETE FROM mysql.user
+      WHERE User='root'
+      AND Host NOT IN ('localhost', '127.0.0.1', '::1')
   no_log: true
   tags: [mariadb, security]
 
-- name: Create databases for each domain
+# =============================================================================
+# DATABASE CREATION  (guarded by mariadb_create_databases flag)
+# =============================================================================
+
+- name: Show status — database creation
+  ansible.builtin.debug:
+    msg: >-
+      mariadb_create_databases={{ mariadb_create_databases }}.
+      {{ 'Databases WILL be created.' if mariadb_create_databases
+         else 'Skipping database creation. Set mariadb_create_databases: true to enable.' }}
+  tags: [mariadb, databases]
+
+- name: Create database for each main domain
   community.mysql.mysql_db:
     name: "{{ item.0.username }}_{{ item.1.domain | regex_replace('[^a-zA-Z0-9]', '_') }}"
     state: present
@@ -80,9 +110,11 @@
     collation: utf8mb4_unicode_ci
     encoding: utf8mb4
   loop: "{{ hosting_users | subelements('domains', skip_missing=True) }}"
+  # Guard: only run when the boolean flag is explicitly set to true
+  when: mariadb_create_databases | bool
   tags: [mariadb, databases]
 
-- name: Create databases for each subdomain
+- name: Create database for each subdomain
   community.mysql.mysql_db:
     name: "{{ item.0.username }}_{{ item.2 }}_{{ item.1.domain | regex_replace('[^a-zA-Z0-9]', '_') }}"
     state: present
@@ -91,87 +123,165 @@
     collation: utf8mb4_unicode_ci
     encoding: utf8mb4
   loop: "{{ hosting_users | subelements('domains') | subelements('1.subdomains', skip_missing=True) }}"
-  when: item.1.subdomains is defined and item.1.subdomains | length > 0
+  # Guard: flag must be true AND subdomain list must be non-empty
+  when:
+    - mariadb_create_databases | bool
+    - item.1.subdomains is defined
+    - item.1.subdomains | length > 0
   tags: [mariadb, databases]
 
+# =============================================================================
+# USER CREATION  (guarded by mariadb_create_users flag)
+# =============================================================================
+
+- name: Show status — user creation
+  ansible.builtin.debug:
+    msg: >-
+      mariadb_create_users={{ mariadb_create_users }}.
+      {{ 'Users WILL be created.' if mariadb_create_users
+         else 'Skipping user creation. Set mariadb_create_users: true to enable.' }}
+  tags: [mariadb, users]
+
+# Generate passwords first (only when user creation is enabled)
 - name: Generate database passwords for main domains
   ansible.builtin.set_fact:
-    domain_db_passwords: "{{ domain_db_passwords | default({}) | combine({ item.0.username + '_' + item.1.domain: lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }) }}"
+    domain_db_passwords: >-
+      {{ domain_db_passwords | default({}) | combine({
+           item.0.username ~ '_' ~ item.1.domain:
+             lookup('password', '/dev/null length=32 chars=ascii_letters,digits')
+         }) }}
   loop: "{{ hosting_users | subelements('domains', skip_missing=True) }}"
+  when: mariadb_create_users | bool
   no_log: true
   tags: [mariadb, users]
 
 - name: Generate database passwords for subdomains
   ansible.builtin.set_fact:
-    subdomain_db_passwords: "{{ subdomain_db_passwords | default({}) | combine({ item.0.username + '_' + item.2 + '_' + item.1.domain: lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }) }}"
+    subdomain_db_passwords: >-
+      {{ subdomain_db_passwords | default({}) | combine({
+           item.0.username ~ '_' ~ item.2 ~ '_' ~ item.1.domain:
+             lookup('password', '/dev/null length=32 chars=ascii_letters,digits')
+         }) }}
   loop: "{{ hosting_users | subelements('domains') | subelements('1.subdomains', skip_missing=True) }}"
-  when: item.1.subdomains is defined and item.1.subdomains | length > 0
+  when:
+    - mariadb_create_users | bool
+    - item.1.subdomains is defined
+    - item.1.subdomains | length > 0
   no_log: true
   tags: [mariadb, users]
 
-- name: Create database users for main domains
+- name: Create database user for each main domain
   community.mysql.mysql_user:
-    name: "{{ item.0.username }}_{{ item.1.domain | regex_replace('[^a-zA-Z0-9]', '_') | truncate(16, True, '') }}"
-    password: "{{ domain_db_passwords[item.0.username + '_' + item.1.domain] }}"
-    priv: "{{ item.0.username }}_{{ item.1.domain | regex_replace('[^a-zA-Z0-9]', '_') }}.*:ALL"
+    name: >-
+      {{ item.0.username ~ '_' ~ item.1.domain
+         | regex_replace('[^a-zA-Z0-9]', '_')
+         | truncate(16, True, '') }}
+    password: "{{ domain_db_passwords[item.0.username ~ '_' ~ item.1.domain] }}"
+    priv: >-
+      {{ item.0.username ~ '_' ~ (item.1.domain | regex_replace('[^a-zA-Z0-9]', '_')) }}.*:ALL
     host: localhost
     state: present
     login_user: root
     login_password: "{{ mariadb_root_password }}"
   loop: "{{ hosting_users | subelements('domains', skip_missing=True) }}"
+  # Guard: flag must be true AND password dict must already be populated
+  when:
+    - mariadb_create_users | bool
+    - domain_db_passwords is defined
   no_log: true
   tags: [mariadb, users]
 
-- name: Create database users for subdomains
+- name: Create database user for each subdomain
   community.mysql.mysql_user:
-    name: "{{ (item.0.username + '_' + item.2 + '_' + item.1.domain) | regex_replace('[^a-zA-Z0-9]', '_') | truncate(16, True, '') }}"
-    password: "{{ subdomain_db_passwords[item.0.username + '_' + item.2 + '_' + item.1.domain] }}"
-    priv: "{{ item.0.username }}_{{ item.2 }}_{{ item.1.domain | regex_replace('[^a-zA-Z0-9]', '_') }}.*:ALL"
+    name: >-
+      {{ (item.0.username ~ '_' ~ item.2 ~ '_' ~ item.1.domain)
+         | regex_replace('[^a-zA-Z0-9]', '_')
+         | truncate(16, True, '') }}
+    password: "{{ subdomain_db_passwords[item.0.username ~ '_' ~ item.2 ~ '_' ~ item.1.domain] }}"
+    priv: >-
+      {{ item.0.username ~ '_' ~ item.2 ~ '_' ~
+         (item.1.domain | regex_replace('[^a-zA-Z0-9]', '_')) }}.*:ALL
     host: localhost
     state: present
     login_user: root
     login_password: "{{ mariadb_root_password }}"
   loop: "{{ hosting_users | subelements('domains') | subelements('1.subdomains', skip_missing=True) }}"
-  when: item.1.subdomains is defined and item.1.subdomains | length > 0
+  when:
+    - mariadb_create_users | bool
+    - subdomain_db_passwords is defined
+    - item.1.subdomains is defined
+    - item.1.subdomains | length > 0
   no_log: true
   tags: [mariadb, users]
 
-- name: Save database credentials to user home directories
+# =============================================================================
+# SAVE CREDENTIALS  (guarded by mariadb_save_credentials flag)
+# =============================================================================
+
+- name: Show status — save credentials
+  ansible.builtin.debug:
+    msg: >-
+      mariadb_save_credentials={{ mariadb_save_credentials }}.
+      {{ 'Credentials WILL be saved to user home dirs.' if mariadb_save_credentials
+         else 'Skipping credential files. Set mariadb_save_credentials: true to enable.' }}
+  tags: [mariadb, credentials]
+
+- name: Save domain database credentials to user home
   ansible.builtin.template:
     src: db-credentials.txt.j2
-    dest: "/home/{{ item.0.username }}/db-credentials-{{ item.1.domain | regex_replace('[^a-zA-Z0-9]', '_') }}.txt"
+    dest: >-
+      /home/{{ item.0.username }}/db-credentials-{{ item.1.domain
+        | regex_replace('[^a-zA-Z0-9]', '_') }}.txt
     owner: "{{ item.0.username }}"
     group: "{{ item.0.username }}"
     mode: '0600'
   loop: "{{ hosting_users | subelements('domains', skip_missing=True) }}"
+  when:
+    - mariadb_save_credentials | bool
+    - domain_db_passwords is defined
   tags: [mariadb, credentials]
 
-- name: Save subdomain database credentials to user home directories
+- name: Save subdomain database credentials to user home
   ansible.builtin.template:
     src: db-credentials-subdomain.txt.j2
-    dest: "/home/{{ item.0.username }}/db-credentials-{{ item.2 }}-{{ item.1.domain | regex_replace('[^a-zA-Z0-9]', '_') }}.txt"
+    dest: >-
+      /home/{{ item.0.username }}/db-credentials-{{ item.2 }}-{{ item.1.domain
+        | regex_replace('[^a-zA-Z0-9]', '_') }}.txt
     owner: "{{ item.0.username }}"
     group: "{{ item.0.username }}"
     mode: '0600'
   loop: "{{ hosting_users | subelements('domains') | subelements('1.subdomains', skip_missing=True) }}"
-  when: item.1.subdomains is defined and item.1.subdomains | length > 0
+  when:
+    - mariadb_save_credentials | bool
+    - subdomain_db_passwords is defined
+    - item.1.subdomains is defined
+    - item.1.subdomains | length > 0
   tags: [mariadb, credentials]
 
-- name: Configure MariaDB for optimal performance
+# =============================================================================
+# PERFORMANCE TUNING  (guarded by mariadb_apply_config flag)
+# =============================================================================
+
+- name: Deploy MariaDB performance tuning config
   ansible.builtin.template:
     src: mariadb-custom.cnf.j2
     dest: /etc/my.cnf.d/99-custom.cnf
     owner: root
     group: root
     mode: '0644'
+  when: mariadb_apply_config | bool
   notify: restart mariadb
   tags: [mariadb, config]
 
-- name: Configure firewall for MySQL (if needed for remote access)
+# =============================================================================
+# FIREWALL
+# =============================================================================
+
+- name: Manage firewall rule for MySQL remote access
   ansible.posix.firewalld:
     service: mysql
     permanent: yes
-    state: "{{ mariadb_allow_remote | default(false) | ternary('enabled', 'disabled') }}"
+    state: "{{ mariadb_allow_remote | bool | ternary('enabled', 'disabled') }}"
     immediate: yes
   when: ansible_facts.services['firewalld.service'] is defined
   tags: [mariadb, firewall]

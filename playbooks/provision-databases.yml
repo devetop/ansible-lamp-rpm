@@ -1,0 +1,79 @@
+---
+# playbooks/provision-databases.yml
+#
+# Purpose: Create databases AND database users for all hosting_users.
+#
+# This playbook temporarily overrides the conditional flags to true,
+# runs the mariadb tasks, then does NOT touch Apache or PHP-FPM.
+#
+# Usage examples:
+#
+#   # Provision ALL servers
+#   ansible-playbook -i inventories/production.ini playbooks/provision-databases.yml
+#
+#   # Provision ONE server only
+#   ansible-playbook -i inventories/production.ini playbooks/provision-databases.yml \
+#     -l web01.example.com
+#
+#   # Dry-run (see what would change, nothing is applied)
+#   ansible-playbook -i inventories/production.ini playbooks/provision-databases.yml \
+#     --check --diff
+#
+#   # Provision but skip saving credential files
+#   ansible-playbook -i inventories/production.ini playbooks/provision-databases.yml \
+#     -e "mariadb_save_credentials=false"
+
+- name: Provision MariaDB Databases and Users
+  hosts: webservers
+  become: yes
+  gather_facts: yes
+
+  vars:
+    # ── Override defaults here ──────────────────────────────────────────────
+    # These flags are false in defaults/main.yml.
+    # We explicitly set them true for this provisioning playbook only.
+    mariadb_create_databases: true
+    mariadb_create_users: true
+    mariadb_save_credentials: true
+    # ────────────────────────────────────────────────────────────────────────
+
+  pre_tasks:
+    - name: Confirm required variables are defined
+      ansible.builtin.assert:
+        that:
+          - hosting_users is defined
+          - mariadb_root_password is defined
+        fail_msg: |
+          hosting_users or mariadb_root_password is not defined.
+          Set them in group_vars/webservers.yml before running this playbook.
+
+    - name: Display provisioning summary
+      ansible.builtin.debug:
+        msg: |
+          ================================================================
+          DATABASE PROVISIONING RUN
+          ================================================================
+          Host            : {{ inventory_hostname }}
+          Create databases: {{ mariadb_create_databases }}
+          Create users    : {{ mariadb_create_users }}
+          Save credentials: {{ mariadb_save_credentials }}
+          Users to process: {{ hosting_users | map(attribute='username') | join(', ') }}
+          ================================================================
+
+  roles:
+    - role: mariadb
+      tags: [mariadb]
+
+  post_tasks:
+    - name: Remind operator to reset flags
+      ansible.builtin.debug:
+        msg: |
+          ================================================================
+          PROVISIONING COMPLETE
+          ================================================================
+          Credential files are in /home/<username>/db-credentials-*.txt
+
+          IMPORTANT: The flags mariadb_create_databases, mariadb_create_users,
+          and mariadb_save_credentials were set to true only for THIS playbook.
+          They remain false in defaults/main.yml and group_vars — no action needed.
+          ================================================================
