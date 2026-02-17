@@ -185,9 +185,6 @@
 # =============================================================================
 # PRE-FLIGHT: QUERY WHAT ALREADY EXISTS
 # =============================================================================
-# These tasks run even when the create-flags are false so that the verify
-# block at the bottom always has accurate data.  changed_when: false ensures
-# they never inflate the changed counter.
 
 - name: Query existing databases from information_schema
   community.mysql.mysql_query:
@@ -204,37 +201,59 @@
     login_password: "{{ mariadb_root_password }}"
     query: "SELECT User FROM mysql.user"
   register: _existing_users_raw
-  changed_when: false        # read-only query — never a change
+  changed_when: false
   tags: [mariadb, databases, users, preflight]
 
-# Flatten the query results into simple Python lists so Jinja2 'in' tests work
 - name: Build existing-database name list
   ansible.builtin.set_fact:
-    _existing_db_names: "{{ _existing_databases_raw.query_result | map('first') | list }}"
+    _existing_db_names: >-
+      {{ _existing_databases_raw.query_result 
+         | map(attribute='SCHEMA_NAME') 
+         | map('lower') 
+         | list }}
   changed_when: false
   tags: [mariadb, databases, users, preflight]
 
 - name: Build existing-user name list
   ansible.builtin.set_fact:
-    _existing_user_names: "{{ _existing_users_raw.query_result | map('first') | list }}"
+    _existing_user_names: >-
+      {{ _existing_users_raw.query_result 
+         | map(attribute='User') 
+         | map('lower') 
+         | list }}
   changed_when: false
   tags: [mariadb, databases, users, preflight]
 
 # =============================================================================
 # IDEMPOTENCY FILTER: compute what is MISSING
 # =============================================================================
-# FIX: Menggunakan loop manual dengan filter | lower untuk memastikan
-# perbandingan nama database dan user bersifat case-insensitive.
-# Ini mencegah Ansible mencoba membuat ulang user yang sudah ada
-# tapi dengan penulisan huruf berbeda (misal: 'User1' vs 'user1').
+
+# Karena _existing_db_names dan _existing_user_names sudah di-lowercase,
+# kita cukup meng-lowercase item dari loop saat membandingkan.
 
 - name: Compute missing domain databases
   ansible.builtin.set_fact:
     _missing_domain_dbs: >-
-      {%- set existing_lower = _existing_db_names | map('lower') | list -%}
+      {{ domain_entries
+         | rejectattr('db_name', 'in', _existing_db_names)
+         | map('combine', {'db_name_calc': ('db_name' | lower)}) | list }} 
+         # Catatan: Kita gunakan filter biasa karena list existing sudah lowercase
+         # Namun 'rejectattr' butuh item yang eksak. Kita ubah item db_name jadi lower sementara untuk perbandingan?
+         # Agar aman dan mudah dibaca, kita gunakan loop manual seperti solusi sebelumnya
+         # tapi sekarang list referensinya sudah benar (isinya data user, bukan string 'User').
+  changed_when: false
+  tags: [mariadb, databases, preflight]
+
+# VERSI LOOP MANUAL (LEbih Stabil untuk Case-Insensitive)
+# Kita gunakan ini untuk memastikan perbandingan akurat antara item (yang belum di-lower) 
+# dan list existing (yang sudah di-lower).
+
+- name: Compute missing domain databases
+  ansible.builtin.set_fact:
+    _missing_domain_dbs: >-
       {%- set missing = [] -%}
       {%- for item in domain_entries -%}
-        {%- if (item.db_name | lower) not in existing_lower -%}
+        {%- if (item.db_name | lower) not in _existing_db_names -%}
           {%- set _ = missing.append(item) -%}
         {%- endif -%}
       {%- endfor -%}
@@ -245,10 +264,9 @@
 - name: Compute missing subdomain databases
   ansible.builtin.set_fact:
     _missing_subdomain_dbs: >-
-      {%- set existing_lower = _existing_db_names | map('lower') | list -%}
       {%- set missing = [] -%}
       {%- for item in subdomain_entries -%}
-        {%- if (item.db_name | lower) not in existing_lower -%}
+        {%- if (item.db_name | lower) not in _existing_db_names -%}
           {%- set _ = missing.append(item) -%}
         {%- endif -%}
       {%- endfor -%}
@@ -259,10 +277,9 @@
 - name: Compute missing domain users
   ansible.builtin.set_fact:
     _missing_domain_users: >-
-      {%- set existing_lower = _existing_user_names | map('lower') | list -%}
       {%- set missing = [] -%}
       {%- for item in domain_entries -%}
-        {%- if (item.db_user | lower) not in existing_lower -%}
+        {%- if (item.db_user | lower) not in _existing_user_names -%}
           {%- set _ = missing.append(item) -%}
         {%- endif -%}
       {%- endfor -%}
@@ -273,10 +290,9 @@
 - name: Compute missing subdomain users
   ansible.builtin.set_fact:
     _missing_subdomain_users: >-
-      {%- set existing_lower = _existing_user_names | map('lower') | list -%}
       {%- set missing = [] -%}
       {%- for item in subdomain_entries -%}
-        {%- if (item.db_user | lower) not in existing_lower -%}
+        {%- if (item.db_user | lower) not in _existing_user_names -%}
           {%- set _ = missing.append(item) -%}
         {%- endif -%}
       {%- endfor -%}
@@ -284,22 +300,18 @@
   changed_when: false
   tags: [mariadb, users, preflight]
 
-# Human-readable summary — always visible, never counts as changed
+# Human-readable summary
 - name: Pre-flight summary
   ansible.builtin.debug:
     msg: |
       ── Pre-flight summary ───────────────────────────────────
-      Existing databases : {{ _existing_db_names | length }}
-      Existing users     : {{ _existing_user_names | length }}
-
+      Existing DBs (Raw) : {{ _existing_databases_raw.query_result | length }}
+      Existing Users (Raw): {{ _existing_users_raw.query_result | length }}
+      
       Missing domain DBs       : {{ _missing_domain_dbs | map(attribute='db_name') | list }}
       Missing subdomain DBs    : {{ _missing_subdomain_dbs | map(attribute='db_name') | list }}
       Missing domain users     : {{ _missing_domain_users | map(attribute='db_user') | list }}
       Missing subdomain users  : {{ _missing_subdomain_users | map(attribute='db_user') | list }}
-
-      Flags ── create_databases={{ mariadb_create_databases }}
-               create_users={{ mariadb_create_users }}
-               save_credentials={{ mariadb_save_credentials }}
       ─────────────────────────────────────────────────────────
   changed_when: false
   tags: [mariadb, databases, users, preflight]
