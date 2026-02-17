@@ -403,6 +403,19 @@
 # SAVE CREDENTIALS  (guarded by mariadb_save_credentials flag)
 # =============================================================================
 
+- name: Check if domain database credentials files exist
+  ansible.builtin.stat:
+    path: "/home/{{ item.username }}/db-credentials-{{ item.db_name }}.txt"
+  loop: "{{ _missing_domain_users }}"
+  register: _domain_creds_stat
+  loop_control:
+    label: "{{ item.username }} / {{ item.db_name }}"
+  when:
+    - mariadb_save_credentials | bool
+    - _missing_domain_users | length > 0
+    - domain_db_passwords is defined
+  tags: [mariadb, credentials]
+
 - name: Save domain database credentials to user home
   ansible.builtin.template:
     src: db-credentials.txt.j2
@@ -413,10 +426,25 @@
   loop: "{{ _missing_domain_users }}"
   loop_control:
     label: "{{ item.username }} / {{ item.db_name }}"
+    extended: yes
   when:
     - mariadb_save_credentials | bool
     - _missing_domain_users | length > 0
     - domain_db_passwords is defined
+    - not _domain_creds_stat.results[ansible_loop.index0].stat.exists
+  tags: [mariadb, credentials]
+
+- name: Check if subdomain database credentials files exist
+  ansible.builtin.stat:
+    path: "/home/{{ item.username }}/db-credentials-{{ item.db_name }}.txt"
+  loop: "{{ _missing_subdomain_users }}"
+  register: _subdomain_creds_stat
+  loop_control:
+    label: "{{ item.username }} / {{ item.db_name }}"
+  when:
+    - mariadb_save_credentials | bool
+    - _missing_subdomain_users | length > 0
+    - subdomain_db_passwords is defined
   tags: [mariadb, credentials]
 
 - name: Save subdomain database credentials to user home
@@ -429,10 +457,12 @@
   loop: "{{ _missing_subdomain_users }}"
   loop_control:
     label: "{{ item.username }} / {{ item.db_name }}"
+    extended: yes
   when:
     - mariadb_save_credentials | bool
     - _missing_subdomain_users | length > 0
     - subdomain_db_passwords is defined
+    - not _subdomain_creds_stat.results[ansible_loop.index0].stat.exists
   tags: [mariadb, credentials]
 
 # =============================================================================
