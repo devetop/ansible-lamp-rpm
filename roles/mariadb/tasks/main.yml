@@ -8,6 +8,11 @@
 #   mariadb_save_credentials  — default: false
 #   mariadb_apply_config      — default: true
 #   mariadb_allow_remote      — default: false
+#
+# ROOT CAUSE NOTE — subelements('1.subdomains') is not valid Ansible syntax.
+# subelements() only accepts a top-level key name (string), not a dotted path
+# into an already-expanded tuple.  The correct approach is to build a flat
+# list with set_fact + Jinja2 for-loops BEFORE looping in a task.
 
 # =============================================================================
 # INSTALL & SERVICE
@@ -90,6 +95,78 @@
   tags: [mariadb, security]
 
 # =============================================================================
+# BUILD FLAT SUBDOMAIN LIST
+# =============================================================================
+# subelements() cannot traverse a dotted path like '1.subdomains'.
+# We build a flat list first, then loop over that list in every subdomain task.
+# Each item in the resulting list is a dict with keys:
+#   username  — owner's Linux username
+#   domain    — parent domain string
+#   subdomain — individual subdomain string
+# This approach works regardless of the number of users, domains, or subdomains.
+
+- name: Build flat list of all user + domain + subdomain combinations
+  ansible.builtin.set_fact:
+    mariadb_subdomain_list: >-
+      {{
+        mariadb_subdomain_list | default([]) +
+        [{'username': user.username, 'domain': domain.domain, 'subdomain': sub}]
+      }}
+  loop: >-
+    {{
+      hosting_users
+      | subelements('domains', skip_missing=True)
+    }}
+  vars:
+    user: "{{ item.0 }}"
+    domain: "{{ item.1 }}"
+  # Only expand when this domain actually has subdomains
+  when: item.1.subdomains is defined and item.1.subdomains | length > 0
+  loop_control:
+    label: "{{ item.0.username }} / {{ item.1.domain }}"
+  tags: [mariadb, databases, users, credentials]
+
+# Build a second flat loop using the per-domain subdomain list
+- name: Expand subdomain list entries for each subdomain
+  ansible.builtin.set_fact:
+    mariadb_subdomain_flat: >-
+      {{
+        mariadb_subdomain_flat | default([]) +
+        [{'username': item.0.username, 'domain': item.0.domain,
+          'subdomain': sub}]
+      }}
+  loop: >-
+    {{
+      (mariadb_subdomain_list | default([]))
+      | subelements('subdomain', skip_missing=True)
+    }}
+  vars:
+    sub: "{{ item.1 }}"
+  when: mariadb_subdomain_list is defined and mariadb_subdomain_list | length > 0
+  loop_control:
+    label: "{{ item.0.username }} / {{ item.0.domain }} / {{ item.1 }}"
+  tags: [mariadb, databases, users, credentials]
+
+# Simpler approach: build the flat list directly with a Jinja2 for-loop
+- name: Build flat subdomain list using Jinja2 for-loop (primary method)
+  ansible.builtin.set_fact:
+    subdomain_entries: >-
+      {%- set result = [] -%}
+      {%- for user in hosting_users -%}
+        {%- for domain in user.domains | default([]) -%}
+          {%- for sub in domain.subdomains | default([]) -%}
+            {%- set _ = result.append({
+              'username':  user.username,
+              'domain':    domain.domain,
+              'subdomain': sub
+            }) -%}
+          {%- endfor -%}
+        {%- endfor -%}
+      {%- endfor -%}
+      {{ result }}
+  tags: [mariadb, databases, users, credentials]
+
+# =============================================================================
 # DATABASE CREATION  (guarded by mariadb_create_databases flag)
 # =============================================================================
 
@@ -98,7 +175,7 @@
     msg: >-
       mariadb_create_databases={{ mariadb_create_databases }}.
       {{ 'Databases WILL be created.' if mariadb_create_databases
-         else 'Skipping database creation. Set mariadb_create_databases: true to enable.' }}
+         else 'Skipping. Set mariadb_create_databases: true to enable.' }}
   tags: [mariadb, databases]
 
 - name: Create database for each main domain
@@ -110,24 +187,28 @@
     collation: utf8mb4_unicode_ci
     encoding: utf8mb4
   loop: "{{ hosting_users | subelements('domains', skip_missing=True) }}"
-  # Guard: only run when the boolean flag is explicitly set to true
+  loop_control:
+    label: "{{ item.0.username }}_{{ item.1.domain | regex_replace('[^a-zA-Z0-9]', '_') }}"
   when: mariadb_create_databases | bool
   tags: [mariadb, databases]
 
+# Use the pre-built flat list — no nested subelements needed
 - name: Create database for each subdomain
   community.mysql.mysql_db:
-    name: "{{ item.0.username }}_{{ item.2 }}_{{ item.1.domain | regex_replace('[^a-zA-Z0-9]', '_') }}"
+    name: >-
+      {{ item.username }}_{{ item.subdomain }}_{{ item.domain
+         | regex_replace('[^a-zA-Z0-9]', '_') }}
     state: present
     login_user: root
     login_password: "{{ mariadb_root_password }}"
     collation: utf8mb4_unicode_ci
     encoding: utf8mb4
-  loop: "{{ hosting_users | subelements('domains') | subelements('1.subdomains', skip_missing=True) }}"
-  # Guard: flag must be true AND subdomain list must be non-empty
+  loop: "{{ subdomain_entries }}"
+  loop_control:
+    label: "{{ item.username }}_{{ item.subdomain }}_{{ item.domain | regex_replace('[^a-zA-Z0-9]', '_') }}"
   when:
     - mariadb_create_databases | bool
-    - item.1.subdomains is defined
-    - item.1.subdomains | length > 0
+    - subdomain_entries | length > 0
   tags: [mariadb, databases]
 
 # =============================================================================
@@ -139,10 +220,9 @@
     msg: >-
       mariadb_create_users={{ mariadb_create_users }}.
       {{ 'Users WILL be created.' if mariadb_create_users
-         else 'Skipping user creation. Set mariadb_create_users: true to enable.' }}
+         else 'Skipping. Set mariadb_create_users: true to enable.' }}
   tags: [mariadb, users]
 
-# Generate passwords first (only when user creation is enabled)
 - name: Generate database passwords for main domains
   ansible.builtin.set_fact:
     domain_db_passwords: >-
@@ -151,6 +231,8 @@
              lookup('password', '/dev/null length=32 chars=ascii_letters,digits')
          }) }}
   loop: "{{ hosting_users | subelements('domains', skip_missing=True) }}"
+  loop_control:
+    label: "{{ item.0.username }} / {{ item.1.domain }}"
   when: mariadb_create_users | bool
   no_log: true
   tags: [mariadb, users]
@@ -159,32 +241,35 @@
   ansible.builtin.set_fact:
     subdomain_db_passwords: >-
       {{ subdomain_db_passwords | default({}) | combine({
-           item.0.username ~ '_' ~ item.2 ~ '_' ~ item.1.domain:
+           item.username ~ '_' ~ item.subdomain ~ '_' ~ item.domain:
              lookup('password', '/dev/null length=32 chars=ascii_letters,digits')
          }) }}
-  loop: "{{ hosting_users | subelements('domains') | subelements('1.subdomains', skip_missing=True) }}"
+  loop: "{{ subdomain_entries }}"
+  loop_control:
+    label: "{{ item.username }} / {{ item.subdomain }}.{{ item.domain }}"
   when:
     - mariadb_create_users | bool
-    - item.1.subdomains is defined
-    - item.1.subdomains | length > 0
+    - subdomain_entries | length > 0
   no_log: true
   tags: [mariadb, users]
 
 - name: Create database user for each main domain
   community.mysql.mysql_user:
     name: >-
-      {{ item.0.username ~ '_' ~ item.1.domain
+      {{ (item.0.username ~ '_' ~ item.1.domain)
          | regex_replace('[^a-zA-Z0-9]', '_')
          | truncate(16, True, '') }}
     password: "{{ domain_db_passwords[item.0.username ~ '_' ~ item.1.domain] }}"
     priv: >-
-      {{ item.0.username ~ '_' ~ (item.1.domain | regex_replace('[^a-zA-Z0-9]', '_')) }}.*:ALL
+      {{ item.0.username ~ '_' ~
+         (item.1.domain | regex_replace('[^a-zA-Z0-9]', '_')) }}.*:ALL
     host: localhost
     state: present
     login_user: root
     login_password: "{{ mariadb_root_password }}"
   loop: "{{ hosting_users | subelements('domains', skip_missing=True) }}"
-  # Guard: flag must be true AND password dict must already be populated
+  loop_control:
+    label: "{{ item.0.username }} / {{ item.1.domain }}"
   when:
     - mariadb_create_users | bool
     - domain_db_passwords is defined
@@ -194,23 +279,24 @@
 - name: Create database user for each subdomain
   community.mysql.mysql_user:
     name: >-
-      {{ (item.0.username ~ '_' ~ item.2 ~ '_' ~ item.1.domain)
+      {{ (item.username ~ '_' ~ item.subdomain ~ '_' ~ item.domain)
          | regex_replace('[^a-zA-Z0-9]', '_')
          | truncate(16, True, '') }}
-    password: "{{ subdomain_db_passwords[item.0.username ~ '_' ~ item.2 ~ '_' ~ item.1.domain] }}"
+    password: "{{ subdomain_db_passwords[item.username ~ '_' ~ item.subdomain ~ '_' ~ item.domain] }}"
     priv: >-
-      {{ item.0.username ~ '_' ~ item.2 ~ '_' ~
-         (item.1.domain | regex_replace('[^a-zA-Z0-9]', '_')) }}.*:ALL
+      {{ item.username ~ '_' ~ item.subdomain ~ '_' ~
+         (item.domain | regex_replace('[^a-zA-Z0-9]', '_')) }}.*:ALL
     host: localhost
     state: present
     login_user: root
     login_password: "{{ mariadb_root_password }}"
-  loop: "{{ hosting_users | subelements('domains') | subelements('1.subdomains', skip_missing=True) }}"
+  loop: "{{ subdomain_entries }}"
+  loop_control:
+    label: "{{ item.username }} / {{ item.subdomain }}.{{ item.domain }}"
   when:
     - mariadb_create_users | bool
     - subdomain_db_passwords is defined
-    - item.1.subdomains is defined
-    - item.1.subdomains | length > 0
+    - subdomain_entries | length > 0
   no_log: true
   tags: [mariadb, users]
 
@@ -222,8 +308,8 @@
   ansible.builtin.debug:
     msg: >-
       mariadb_save_credentials={{ mariadb_save_credentials }}.
-      {{ 'Credentials WILL be saved to user home dirs.' if mariadb_save_credentials
-         else 'Skipping credential files. Set mariadb_save_credentials: true to enable.' }}
+      {{ 'Credentials WILL be saved.' if mariadb_save_credentials
+         else 'Skipping. Set mariadb_save_credentials: true to enable.' }}
   tags: [mariadb, credentials]
 
 - name: Save domain database credentials to user home
@@ -236,6 +322,8 @@
     group: "{{ item.0.username }}"
     mode: '0600'
   loop: "{{ hosting_users | subelements('domains', skip_missing=True) }}"
+  loop_control:
+    label: "{{ item.0.username }} / {{ item.1.domain }}"
   when:
     - mariadb_save_credentials | bool
     - domain_db_passwords is defined
@@ -245,17 +333,18 @@
   ansible.builtin.template:
     src: db-credentials-subdomain.txt.j2
     dest: >-
-      /home/{{ item.0.username }}/db-credentials-{{ item.2 }}-{{ item.1.domain
+      /home/{{ item.username }}/db-credentials-{{ item.subdomain }}-{{ item.domain
         | regex_replace('[^a-zA-Z0-9]', '_') }}.txt
-    owner: "{{ item.0.username }}"
-    group: "{{ item.0.username }}"
+    owner: "{{ item.username }}"
+    group: "{{ item.username }}"
     mode: '0600'
-  loop: "{{ hosting_users | subelements('domains') | subelements('1.subdomains', skip_missing=True) }}"
+  loop: "{{ subdomain_entries }}"
+  loop_control:
+    label: "{{ item.username }} / {{ item.subdomain }}.{{ item.domain }}"
   when:
     - mariadb_save_credentials | bool
     - subdomain_db_passwords is defined
-    - item.1.subdomains is defined
-    - item.1.subdomains | length > 0
+    - subdomain_entries | length > 0
   tags: [mariadb, credentials]
 
 # =============================================================================
