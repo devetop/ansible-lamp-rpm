@@ -204,11 +204,13 @@
   changed_when: false
   tags: [mariadb, databases, users, preflight]
 
+# PERBAIKAN 1: Gunakan map('first') karena hasil query adalah List of Lists [['db1'], ['db2']].
+# PERBAIKAN 2: Tambahkan map('lower') agar semua nama jadi huruf kecil (Case-Insensitive).
 - name: Build existing-database name list
   ansible.builtin.set_fact:
     _existing_db_names: >-
       {{ _existing_databases_raw.query_result 
-         | map(attribute='SCHEMA_NAME') 
+         | map('first') 
          | map('lower') 
          | list }}
   changed_when: false
@@ -218,7 +220,7 @@
   ansible.builtin.set_fact:
     _existing_user_names: >-
       {{ _existing_users_raw.query_result 
-         | map(attribute='User') 
+         | map('first') 
          | map('lower') 
          | list }}
   changed_when: false
@@ -228,25 +230,8 @@
 # IDEMPOTENCY FILTER: compute what is MISSING
 # =============================================================================
 
-# Karena _existing_db_names dan _existing_user_names sudah di-lowercase,
-# kita cukup meng-lowercase item dari loop saat membandingkan.
-
-- name: Compute missing domain databases
-  ansible.builtin.set_fact:
-    _missing_domain_dbs: >-
-      {{ domain_entries
-         | rejectattr('db_name', 'in', _existing_db_names)
-         | map('combine', {'db_name_calc': ('db_name' | lower)}) | list }} 
-         # Catatan: Kita gunakan filter biasa karena list existing sudah lowercase
-         # Namun 'rejectattr' butuh item yang eksak. Kita ubah item db_name jadi lower sementara untuk perbandingan?
-         # Agar aman dan mudah dibaca, kita gunakan loop manual seperti solusi sebelumnya
-         # tapi sekarang list referensinya sudah benar (isinya data user, bukan string 'User').
-  changed_when: false
-  tags: [mariadb, databases, preflight]
-
-# VERSI LOOP MANUAL (LEbih Stabil untuk Case-Insensitive)
-# Kita gunakan ini untuk memastikan perbandingan akurat antara item (yang belum di-lower) 
-# dan list existing (yang sudah di-lower).
+# Karena _existing_user_names sekarang sudah berisi list huruf kecil yang benar,
+# kita bandingkan dengan item yang juga di-lower-kan.
 
 - name: Compute missing domain databases
   ansible.builtin.set_fact:
@@ -305,8 +290,8 @@
   ansible.builtin.debug:
     msg: |
       ── Pre-flight summary ───────────────────────────────────
-      Existing DBs (Raw) : {{ _existing_databases_raw.query_result | length }}
-      Existing Users (Raw): {{ _existing_users_raw.query_result | length }}
+      Existing DBs (Count) : {{ _existing_db_names | length }}
+      Existing Users (Count): {{ _existing_user_names | length }}
       
       Missing domain DBs       : {{ _missing_domain_dbs | map(attribute='db_name') | list }}
       Missing subdomain DBs    : {{ _missing_subdomain_dbs | map(attribute='db_name') | list }}
