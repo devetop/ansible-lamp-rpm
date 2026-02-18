@@ -370,65 +370,6 @@
   tags: [mariadb, manual, users]
 
 # =============================================================================
-# VERIFY  (always runs — changed_when: false throughout)
-# =============================================================================
-# These tasks re-query the server and show what exists.  Because every task
-# in this block carries changed_when: false the play never reports changed=N
-# for verification steps — the output is always clean.
-
-- name: "[VERIFY] Re-query existing databases after provisioning"
-  community.mysql.mysql_query:
-    login_user: root
-    login_password: "{{ mariadb_root_password }}"
-    query: >
-      SELECT SCHEMA_NAME AS db
-      FROM information_schema.SCHEMATA
-      WHERE SCHEMA_NAME NOT IN ('information_schema','mysql','performance_schema','sys')
-      ORDER BY SCHEMA_NAME
-  register: _verify_databases
-  changed_when: false
-  tags: [mariadb, verify]
-
-- name: "[VERIFY] Re-query existing users after provisioning"
-  community.mysql.mysql_query:
-    login_user: root
-    login_password: "{{ mariadb_root_password }}"
-    query: >
-      SELECT User, Host
-      FROM mysql.user
-      WHERE User NOT IN ('root','mysql','mariadb.sys','')
-      ORDER BY User
-  register: _verify_users
-  changed_when: false
-  tags: [mariadb, verify]
-
-- name: "[VERIFY] Display provisioned databases"
-  ansible.builtin.debug:
-    msg: |
-      ── Databases present on {{ inventory_hostname }} ────────
-      {% for row in _verify_databases.query_result %}
-        ✓  {{ row[0] }}
-      {% else %}
-        (none — provision with mariadb_create_databases: true)
-      {% endfor %}
-      ─────────────────────────────────────────────────────────
-  changed_when: false
-  tags: [mariadb, verify]
-
-- name: "[VERIFY] Display provisioned users"
-  ansible.builtin.debug:
-    msg: |
-      ── Users present on {{ inventory_hostname }} ────────────
-      {% for row in _verify_users.query_result %}
-        ✓  {{ row[0] }}@{{ row[1] }}
-      {% else %}
-        (none — provision with mariadb_create_users: true)
-      {% endfor %}
-      ─────────────────────────────────────────────────────────
-  changed_when: false
-  tags: [mariadb, verify]
-
-# =============================================================================
 # PERFORMANCE TUNING  (guarded by mariadb_apply_config flag)
 # =============================================================================
 
