@@ -385,7 +385,6 @@
       FROM information_schema.SCHEMATA
       WHERE SCHEMA_NAME NOT IN ('information_schema','mysql','performance_schema','sys')
       ORDER BY SCHEMA_NAME
-    row_format: dict          # <--- tambahkan ini
   register: _verify_databases
   changed_when: false
   tags: [mariadb, verify]
@@ -399,7 +398,6 @@
       FROM mysql.user
       WHERE User NOT IN ('root','mysql','mariadb.sys','')
       ORDER BY User
-    row_format: dict          # <--- tambahkan ini
   register: _verify_users
   changed_when: false
   tags: [mariadb, verify]
@@ -409,7 +407,7 @@
     msg: |
       ── Databases present on {{ inventory_hostname }} ────────
       {% for row in _verify_databases.query_result %}
-        ✓  {{ row.db }}        # sekarang row adalah dict dengan key 'db'
+        ✓  {{ row[0] }}
       {% else %}
         (none — provision with mariadb_create_databases: true)
       {% endfor %}
@@ -422,7 +420,7 @@
     msg: |
       ── Users present on {{ inventory_hostname }} ────────────
       {% for row in _verify_users.query_result %}
-        ✓  {{ row.User }}@{{ row.Host }}   # row adalah dict
+        ✓  {{ row[0] }}@{{ row[1] }}
       {% else %}
         (none — provision with mariadb_create_users: true)
       {% endfor %}
