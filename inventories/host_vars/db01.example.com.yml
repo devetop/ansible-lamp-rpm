@@ -1,0 +1,90 @@
+---
+# host_vars/db01.example.com.yml
+#
+# Per-host variable overrides.
+# Use this when a specific server needs unique databases or users.
+#
+# Example scenarios:
+#   - Primary database server has admin users; replicas do not
+#   - Staging server has different credentials than production
+#   - Dedicated backup server has read-only users only
+
+# =============================================================================
+# HOST-SPECIFIC DATABASES
+# =============================================================================
+# Override mariadb_databases for this host only.
+# If not defined here, inherits from group_vars/all.yml.
+
+mariadb_databases:
+  # WordPress production database
+  - name: wordpress_prod
+    collation: utf8mb4_unicode_ci
+    encoding: utf8mb4
+
+  - name: production_analytics
+    collation: utf8mb4_unicode_ci
+
+  - name: production_sessions
+    collation: utf8mb4_bin
+
+  # Replication database
+  - name: replication_metadata
+
+# =============================================================================
+# HOST-SPECIFIC USERS
+# =============================================================================
+
+mariadb_users:
+  # WordPress full access
+  - name: wp_user
+    password: "{{ vault_wp_password | default('TempWpPassword123!') }}"
+    priv: "wordpress_prod.*:ALL"
+    host: localhost
+
+  # Primary DB admin (only on primary server)
+  - name: dba_primary
+    password: "{{ vault_dba_primary_password }}"
+    priv: "*.*:ALL"
+    host: localhost
+
+  # Analytics read-only user
+  - name: analytics_ro
+    password: "{{ vault_analytics_ro_password }}"
+    priv: "production_analytics.*:SELECT"
+    host: "10.0.1.0/24"    # Allow from analytics subnet
+
+  # Replication user (if this is primary)
+  - name: replication_user
+    password: "{{ vault_replication_password }}"
+    priv: "*.*:REPLICATION SLAVE,REPLICATION CLIENT"
+    host: "10.0.2.%"       # Allow from replica subnet
+
+  # Application user with specific access
+  - name: app_service
+    password: "{{ vault_app_service_password }}"
+    priv: "production_analytics.*:SELECT,INSERT,UPDATE/production_sessions.*:ALL"
+    host: "app-server.local"
+
+# =============================================================================
+# HOST-SPECIFIC MARIADB TUNING
+# =============================================================================
+# You can also override performance settings per-host.
+
+# Larger buffer pool for dedicated DB server
+mariadb_innodb_buffer_pool_size: "8G"
+mariadb_max_connections: 500
+
+# Enable query cache on primary
+mariadb_query_cache_type: 1
+mariadb_query_cache_size: "256M"
+
+# =============================================================================
+# NOTES
+# =============================================================================
+# Variables defined here take precedence over group_vars/all.yml.
+# Variable precedence (highest to lowest):
+#   1. -e command line variables
+#   2. host_vars/hostname.yml
+#   3. group_vars/groupname.yml
+#   4. group_vars/all.yml
+#   5. roles/rolename/defaults/main.yml

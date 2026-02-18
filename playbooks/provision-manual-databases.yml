@@ -1,0 +1,133 @@
+---
+# playbooks/provision-manual-databases.yml
+#
+# Purpose: Create manually-defined databases and users from group_vars or host_vars.
+#
+# This playbook ONLY processes the mariadb_databases and mariadb_users
+# variables — it does NOT touch hosting_users auto-provisioning.
+#
+# Use cases:
+#   - Add admin / monitoring databases
+#   - Create backup users
+#   - Provision application databases separate from web hosting
+#   - One-time DB setup for CI/CD or analytics
+
+- name: Provision Manual MariaDB Databases and Users
+  hosts: webservers
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Display variables that will be processed
+      ansible.builtin.debug:
+        msg: |
+          ================================================================
+          MANUAL DATABASE PROVISIONING
+          ================================================================
+          Host: {{ inventory_hostname }}
+          
+          Databases to create ({{ mariadb_databases | length }}):
+          {% for db in mariadb_databases %}
+            - {{ db.name }}
+          {% else %}
+            (none — set mariadb_databases in group_vars or host_vars)
+          {% endfor %}
+          
+          Users to create ({{ mariadb_users | length }}):
+          {% for user in mariadb_users %}
+            - {{ user.name }}@{{ user.host | default('localhost') }} → {{ user.priv }}
+          {% else %}
+            (none — set mariadb_users in group_vars or host_vars)
+          {% endfor %}
+          ================================================================
+
+    - name: Validate mariadb_databases is defined
+      ansible.builtin.assert:
+        that:
+          - mariadb_databases is defined
+        fail_msg: |
+          mariadb_databases is not defined.
+          Define it in group_vars/all.yml or host_vars/{{ inventory_hostname }}.yml
+        success_msg: "mariadb_databases is defined"
+
+    - name: Validate mariadb_users is defined
+      ansible.builtin.assert:
+        that:
+          - mariadb_users is defined
+        fail_msg: |
+          mariadb_users is not defined.
+          Define it in group_vars/all.yml or host_vars/{{ inventory_hostname }}.yml
+        success_msg: "mariadb_users is defined"
+
+  tasks:
+    # Run only the manual database/user tasks from mariadb role
+    - name: Include mariadb role tasks (manual only)
+      ansible.builtin.include_role:
+        name: mariadb
+        tasks_from: main
+      tags: [manual]
+
+  post_tasks:
+    - name: Verify created databases
+      community.mysql.mysql_query:
+        login_user: root
+        login_password: "{{ mariadb_root_password }}"
+        query: >
+          SELECT SCHEMA_NAME
+          FROM information_schema.SCHEMATA
+          WHERE SCHEMA_NAME NOT IN ('information_schema','mysql','performance_schema','sys')
+          ORDER BY SCHEMA_NAME
+      register: _final_databases
+      changed_when: false
+
+    - name: Verify created users
+      community.mysql.mysql_query:
+        login_user: root
+        login_password: "{{ mariadb_root_password }}"
+        query: >
+          SELECT User, Host
+          FROM mysql.user
+          WHERE User NOT IN ('root','mysql','mariadb.sys','')
+          ORDER BY User
+      register: _final_users
+      changed_when: false
+
+    - name: Display final state
+      ansible.builtin.debug:
+        msg: |
+          ================================================================
+          PROVISIONING COMPLETE
+          ================================================================
+          Databases on {{ inventory_hostname }}:
+          {% for row in _final_databases.query_result %}
+            ✓  {{ row.SCHEMA_NAME }}
+          {% endfor %}
+          
+          Users on {{ inventory_hostname }}:
+          {% for row in _final_users.query_result %}
+            ✓  {{ row.User }}@{{ row.Host }}
+          {% endfor %}
+          ================================================================
+
+# =============================================================================
+# USAGE EXAMPLES
+# =============================================================================
+#
+# 1. Provision all servers with manual definitions
+#    ansible-playbook -i inventories/production.ini playbooks/provision-manual-databases.yml
+#
+# 2. Provision only one server
+#    ansible-playbook -i inventories/production.ini playbooks/provision-manual-databases.yml \
+#      -l db01.example.com
+#
+# 3. Dry-run (see what would change)
+#    ansible-playbook -i inventories/production.ini playbooks/provision-manual-databases.yml \
+#      --check --diff
+#
+# 4. Run only user creation (skip databases)
+#    ansible-playbook -i inventories/production.ini playbooks/provision-manual-databases.yml \
+#      --tags "manual,users"
+#
+# 5. Run only database creation (skip users)
+#    ansible-playbook -i inventories/production.ini playbooks/provision-manual-databases.yml \
+#      --tags "manual,databases"

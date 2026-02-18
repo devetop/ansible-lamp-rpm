@@ -16,6 +16,13 @@ hosting_users:
       max_execution_time: 600
       memory_limit: 512M
 
-mariadb_create_databases: true
-mariadb_create_users: true
-mariadb_save_credentials: true
+mariadb_databases:
+  - name: demo_app
+    collation: utf8mb4_unicode_ci
+    encoding: utf8mb4
+
+mariadb_users:
+  - name: demo_app
+    password: "{{ vault_wp_password | default('TempWpPassword123!') }}"
+    priv: "demo_app.*:ALL"
+    host: localhost

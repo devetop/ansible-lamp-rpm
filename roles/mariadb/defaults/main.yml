@@ -102,3 +102,37 @@ mariadb_max_allowed_packet: "64M"
 #
 # Allowed values: 1–16 (for MariaDB <= 10.5) or 1–80 (for >= 10.6)
 mariadb_username_max_length: 16
+
+# =============================================================================
+# MANUAL DATABASE DEFINITIONS (optional)
+# =============================================================================
+# Define databases and users manually via group_vars or host_vars.
+# These are processed AFTER the auto-provisioned hosting_users databases.
+# Useful for admin/monitoring/backup databases that are not tied to web domains.
+#
+# Structure:
+#   mariadb_databases:
+#     - name: database_name
+#       collation: utf8mb4_unicode_ci  # optional
+#       encoding: utf8mb4              # optional
+#
+#   mariadb_users:
+#     - name: username
+#       password: "secret"
+#       priv: "database_name.*:ALL"    # or "database_name.*:SELECT,INSERT"
+#       host: localhost                # optional, default localhost
+#
+# Example:
+#   mariadb_databases:
+#     - name: wordpress_prod
+#     - name: grafana
+#   mariadb_users:
+#     - name: wp_user
+#       password: "{{ vault_wp_password }}"
+#       priv: "wordpress_prod.*:ALL"
+#     - name: grafana_ro
+#       password: "{{ vault_grafana_password }}"
+#       priv: "grafana.*:SELECT"
+
+mariadb_databases: []
+mariadb_users: []

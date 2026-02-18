@@ -333,6 +333,43 @@
   tags: [mariadb, credentials]
 
 # =============================================================================
+# MANUAL DATABASE & USER DEFINITIONS  (from mariadb_databases / mariadb_users)
+# =============================================================================
+# These tasks process databases and users defined manually in group_vars or
+# host_vars — independent of the hosting_users structure.
+# Typical use: admin databases, monitoring, backups, or non-web applications.
+
+- name: "[MANUAL] Create manually-defined databases"
+  community.mysql.mysql_db:
+    name: "{{ item.name }}"
+    state: present
+    collation: "{{ item.collation | default('utf8mb4_unicode_ci') }}"
+    encoding: "{{ item.encoding | default('utf8mb4') }}"
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+  loop: "{{ mariadb_databases }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: mariadb_databases | length > 0
+  tags: [mariadb, manual, databases]
+
+- name: "[MANUAL] Create manually-defined users with privileges"
+  community.mysql.mysql_user:
+    name: "{{ item.name }}"
+    password: "{{ item.password }}"
+    priv: "{{ item.priv }}"
+    host: "{{ item.host | default('localhost') }}"
+    state: present
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+  loop: "{{ mariadb_users }}"
+  loop_control:
+    label: "{{ item.name }}@{{ item.host | default('localhost') }} → {{ item.priv }}"
+  when: mariadb_users | length > 0
+  no_log: true
+  tags: [mariadb, manual, users]
+
+# =============================================================================
 # VERIFY  (always runs — changed_when: false throughout)
 # =============================================================================
 # These tasks re-query the server and show what exists.  Because every task

@@ -1,0 +1,142 @@
+---
+# group_vars/all.yml
+#
+# Variables that apply to ALL hosts in the inventory.
+# Use this file to define databases and users that are NOT tied to specific
+# web hosting users (hosting_users structure is in group_vars/webservers.yml).
+#
+# Typical use cases:
+#   - Admin / monitoring databases (Grafana, Zabbix, etc.)
+#   - Backup user with read-only access
+#   - Application databases separate from web hosting
+#   - CI/CD pipeline databases
+
+# =============================================================================
+# MARIADB ROOT PASSWORD
+# =============================================================================
+# CRITICAL: Use Ansible Vault in production!
+# Create vault: ansible-vault create group_vars/all/vault.yml
+# Reference:    mariadb_root_password: "{{ vault_mariadb_root_password }}"
+
+mariadb_root_password: "RootPassword123!ChangeMe"
+
+# =============================================================================
+# MANUAL DATABASE DEFINITIONS
+# =============================================================================
+# List of databases to create.
+# These are independent of hosting_users — use for any non-web application.
+
+mariadb_databases:
+  # Example 1: WordPress production database
+  - name: wordpress_prod
+    collation: utf8mb4_unicode_ci
+    encoding: utf8mb4
+
+  # Example 2: Grafana monitoring
+  - name: grafana
+    collation: utf8mb4_general_ci
+    encoding: utf8mb4
+
+  # Example 3: Backup staging database
+  - name: backup_staging
+
+  # Example 4: CI/CD testing database
+  - name: cicd_test_db
+
+# =============================================================================
+# MANUAL USER DEFINITIONS
+# =============================================================================
+# List of database users with their passwords and privileges.
+# Each user is scoped to one or more databases via the 'priv' field.
+#
+# Privileges format:  "database_name.*:PRIV1,PRIV2"
+# Common privileges:  ALL, SELECT, INSERT, UPDATE, DELETE, CREATE, DROP
+# Multiple databases: "db1.*:ALL/db2.*:SELECT"
+
+mariadb_users:
+  # Example 1: WordPress full access
+  - name: wp_user
+    password: "{{ vault_wp_password | default('TempWpPassword123!') }}"
+    priv: "wordpress_prod.*:ALL"
+    host: localhost
+
+  # Example 2: Grafana full access
+  - name: grafana_user
+    password: "{{ vault_grafana_password | default('TempGrafanaPass123!') }}"
+    priv: "grafana.*:ALL"
+    host: localhost
+
+  # Example 3: Read-only backup user (can read ALL databases)
+  - name: backup_ro
+    password: "{{ vault_backup_password | default('TempBackupPass123!') }}"
+    priv: "*.*:SELECT,LOCK TABLES,SHOW VIEW"
+    host: localhost
+
+  # Example 4: Developer with limited access
+  - name: developer
+    password: "{{ vault_developer_password | default('TempDevPass123!') }}"
+    priv: "cicd_test_db.*:SELECT,INSERT,UPDATE,DELETE"
+    host: localhost
+
+  # Example 5: Monitoring user (read-only across all DBs)
+  - name: monitor
+    password: "{{ vault_monitor_password | default('TempMonitorPass123!') }}"
+    priv: "*.*:SELECT,PROCESS,REPLICATION CLIENT"
+    host: localhost
+
+  # Example 6: Remote access user (from specific IP)
+  - name: remote_admin
+    password: "{{ vault_remote_admin_password | default('TempRemotePass123!') }}"
+    priv: "wordpress_prod.*:ALL"
+    host: "192.168.1.100"
+
+# =============================================================================
+# PRIVILEGE REFERENCE
+# =============================================================================
+# Format:  "database.table:PRIV1,PRIV2,PRIV3"
+#
+# Scope:
+#   *.*                    — All databases, all tables
+#   database_name.*        — All tables in database_name
+#   database_name.table    — Specific table only
+#
+# Common privileges:
+#   ALL                    — Full access (excludes GRANT)
+#   SELECT                 — Read data
+#   INSERT                 — Insert new rows
+#   UPDATE                 — Modify existing rows
+#   DELETE                 — Remove rows
+#   CREATE                 — Create databases/tables
+#   DROP                   — Delete databases/tables
+#   ALTER                  — Modify table structure
+#   INDEX                  — Create/drop indexes
+#   GRANT                  — Grant privileges to other users
+#   LOCK TABLES            — Lock tables for backup
+#   SHOW VIEW              — View CREATE VIEW statements
+#   PROCESS                — Show all processes
+#   REPLICATION CLIENT     — Read replication status
+#
+# Examples:
+#   "wordpress.*:ALL"                          — Full access to wordpress DB
+#   "app.*:SELECT,INSERT,UPDATE,DELETE"        — CRUD only, no structure changes
+#   "*.*:SELECT,PROCESS"                       — Read-only monitoring
+#   "db1.*:ALL/db2.*:SELECT"                   — Multiple databases
+#   "reports.*:SELECT/staging.*:ALL"           — Mixed privileges
+
+# =============================================================================
+# ALTERNATIVE: ANSIBLE VAULT STRUCTURE
+# =============================================================================
+# Create encrypted file:  ansible-vault create group_vars/all/vault.yml
+#
+# vault.yml contents:
+#   vault_mariadb_root_password: "ActualRootPass123!"
+#   vault_wp_password: "ActualWpPass456!"
+#   vault_grafana_password: "ActualGrafanaPass789!"
+#   vault_backup_password: "ActualBackupPass012!"
+#
+# Then reference in this file:
+#   mariadb_root_password: "{{ vault_mariadb_root_password }}"
+#   mariadb_users:
+#     - name: wp_user
+#       password: "{{ vault_wp_password }}"
+#       priv: "wordpress_prod.*:ALL"
