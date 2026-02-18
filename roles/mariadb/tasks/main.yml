@@ -185,14 +185,6 @@
 # =============================================================================
 # PASSWORD GENERATION STRATEGY (FILE-BASED IDEMPOTENCY)
 # =============================================================================
-# Kita tidak lagi mendeteksi keberadaan user di database untuk mencegah
-# password reset. Sebagai gantinya, kita melihat apakah file credential
-# sudah ada.
-#   - Jika file ADA: User dianggap sudah ada dengan password yang benar.
-#     Kita TIDAK mengirim parameter password ke mysql_user agar password
-#     di database tidak diubah.
-#   - Jika file TIDAK ADA: User baru dibuat. Password digenerate, file
-#     disimpan, dan password dikirim ke mysql_user.
 
 - name: Check if domain database credentials files exist
   ansible.builtin.stat:
@@ -246,9 +238,6 @@
 # DATABASE & USER PROVISIONING
 # =============================================================================
 
-# Kita loop ke SELURUH entry, bukan hanya yang missing.
-# mysql_user module akan menangani idempotensi (create jika belum ada).
-
 - name: "[DB] Ensure domain databases exist"
   community.mysql.mysql_db:
     name: "{{ item.db_name }}"
@@ -280,8 +269,6 @@
 - name: "[USER] Ensure domain users exist"
   community.mysql.mysql_user:
     name: "{{ item.db_user }}"
-    # TRIK PENTING: Hanya kirim password jika ada di dictionary (artinya user baru/file baru).
-    # Jika user lama, passwordnya di-omit (dikosongkan), sehingga password DB tidak di-reset.
     password: "{{ domain_db_passwords[item.db_user] | default(omit) }}"
     priv: "{{ item.db_name }}.*:ALL"
     host: localhost
@@ -327,7 +314,7 @@
     label: "{{ item.username }} / {{ item.db_name }}"
   when:
     - mariadb_save_credentials | bool
-    - domain_db_passwords[item.db_user] is defined # Hanya simpan jika baru digenerate
+    - domain_db_passwords[item.db_user] is defined
   tags: [mariadb, credentials]
 
 - name: Save subdomain database credentials to user home
@@ -362,7 +349,7 @@
       WHERE SCHEMA_NAME NOT IN ('information_schema','mysql','performance_schema','sys')
       ORDER BY SCHEMA_NAME
   register: _verify_databases
-  changed_when: false        # read-only — never a change
+  changed_when: false
   tags: [mariadb, verify]
 
 - name: "[VERIFY] Re-query existing users after provisioning"
@@ -375,7 +362,7 @@
       WHERE User NOT IN ('root','mysql','mariadb.sys','')
       ORDER BY User
   register: _verify_users
-  changed_when: false        # read-only — never a change
+  changed_when: false
   tags: [mariadb, verify]
 
 - name: "[VERIFY] Display provisioned databases"
