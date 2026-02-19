@@ -199,6 +199,125 @@
     enabled: yes
   tags: [apache, service]
 
+# =============================================================================
+# SSL / TLS SETUP
+# =============================================================================
+
+- name: Install mod_ssl
+  ansible.builtin.dnf:
+    name: mod_ssl
+    state: present
+  when: apache_enable_ssl | bool
+  notify: restart apache
+  tags: [apache, ssl, install]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OPTION A: MANUAL SSL CERTIFICATES
+# ─────────────────────────────────────────────────────────────────────────────
+
+- name: Validate manual SSL certificate paths exist
+  ansible.builtin.stat:
+    path: "{{ item.value.cert }}"
+  loop: "{{ apache_ssl_certificates | dict2items }}"
+  loop_control:
+    label: "{{ item.key }} → {{ item.value.cert }}"
+  register: _ssl_cert_check
+  when:
+    - apache_enable_ssl | bool
+    - not apache_enable_letsencrypt | bool
+    - apache_ssl_certificates | length > 0
+  failed_when: not _ssl_cert_check.stat.exists
+  tags: [apache, ssl, validate]
+
+- name: Validate manual SSL key paths exist
+  ansible.builtin.stat:
+    path: "{{ item.value.key }}"
+  loop: "{{ apache_ssl_certificates | dict2items }}"
+  loop_control:
+    label: "{{ item.key }} → {{ item.value.key }}"
+  register: _ssl_key_check
+  when:
+    - apache_enable_ssl | bool
+    - not apache_enable_letsencrypt | bool
+    - apache_ssl_certificates | length > 0
+  failed_when: not _ssl_key_check.stat.exists
+  tags: [apache, ssl, validate]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OPTION B: LET'S ENCRYPT (CERTBOT)
+# ─────────────────────────────────────────────────────────────────────────────
+
+- name: Validate Let's Encrypt email is set
+  ansible.builtin.assert:
+    that:
+      - apache_letsencrypt_email | length > 0
+      - "'@' in apache_letsencrypt_email"
+    fail_msg: |
+      apache_letsencrypt_email must be set when apache_enable_letsencrypt: true.
+      Set it in group_vars or host_vars.
+    success_msg: "Let's Encrypt email: {{ apache_letsencrypt_email }}"
+  when:
+    - apache_enable_ssl | bool
+    - apache_enable_letsencrypt | bool
+  tags: [apache, ssl, letsencrypt]
+
+- name: Install Certbot and Apache plugin
+  ansible.builtin.dnf:
+    name:
+      - certbot
+      - python3-certbot-apache
+    state: present
+  when:
+    - apache_enable_ssl | bool
+    - apache_enable_letsencrypt | bool
+  tags: [apache, ssl, letsencrypt, install]
+
+- name: Build list of domains for Let's Encrypt
+  ansible.builtin.set_fact:
+    _letsencrypt_domains: >-
+      {%- set result = [] -%}
+      {%- for user in hosting_users -%}
+        {%- for dom in user.domains | default([]) -%}
+          {%- set _ = result.append(dom.domain) -%}
+          {%- for sub in dom.subdomains | default([]) -%}
+            {%- set _ = result.append(sub ~ '.' ~ dom.domain) -%}
+          {%- endfor -%}
+        {%- endfor -%}
+      {%- endfor -%}
+      {{ result | unique }}
+  when:
+    - apache_enable_ssl | bool
+    - apache_enable_letsencrypt | bool
+  tags: [apache, ssl, letsencrypt]
+
+- name: Request Let's Encrypt certificates
+  ansible.builtin.command:
+    cmd: >
+      certbot certonly --apache --non-interactive
+      --agree-tos --email {{ apache_letsencrypt_email }}
+      {% if apache_certbot_staging %}--staging{% endif %}
+      --domain {{ item }}
+      --deploy-hook "{{ apache_certbot_renew_hook }}"
+    creates: "/etc/letsencrypt/live/{{ item }}/fullchain.pem"
+  loop: "{{ _letsencrypt_domains }}"
+  loop_control:
+    label: "{{ item }}"
+  when:
+    - apache_enable_ssl | bool
+    - apache_enable_letsencrypt | bool
+    - _letsencrypt_domains | length > 0
+  tags: [apache, ssl, letsencrypt]
+
+- name: Enable Certbot renewal timer
+  ansible.builtin.systemd:
+    name: certbot-renew.timer
+    state: started
+    enabled: true
+  when:
+    - apache_enable_ssl | bool
+    - apache_enable_letsencrypt | bool
+  tags: [apache, ssl, letsencrypt]
+
 - name: Configure firewall for HTTP/HTTPS
   ansible.posix.firewalld:
     service: "{{ item }}"

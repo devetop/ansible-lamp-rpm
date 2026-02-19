@@ -59,3 +59,66 @@ apache_group: apache
 
 # Firewall management
 apache_manage_firewall: true
+
+# =============================================================================
+# SSL / TLS CONFIGURATION
+# =============================================================================
+
+# Enable SSL support globally (creates port 443 VirtualHosts)
+apache_enable_ssl: false
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OPTION A: MANUAL SSL CERTIFICATES
+# ─────────────────────────────────────────────────────────────────────────────
+# Provide paths to existing certificate files.
+# These are used when apache_enable_ssl: true and apache_enable_letsencrypt: false
+#
+# Structure (define in group_vars or host_vars):
+#   apache_ssl_certificates:
+#     domain.com:
+#       cert: /path/to/domain.com.crt
+#       key: /path/to/domain.com.key
+#       chain: /path/to/chain.crt    # optional
+#     another-domain.com:
+#       cert: /path/to/another.crt
+#       key: /path/to/another.key
+
+apache_ssl_certificates: {}
+
+# Default self-signed certificate paths (used as fallback if no cert defined)
+apache_ssl_default_cert: /etc/pki/tls/certs/localhost.crt
+apache_ssl_default_key: /etc/pki/tls/private/localhost.key
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OPTION B: LET'S ENCRYPT (CERTBOT)
+# ─────────────────────────────────────────────────────────────────────────────
+# Automatically request and install Let's Encrypt certificates.
+# Requires: domain DNS points to this server, port 80/443 open.
+
+apache_enable_letsencrypt: false
+
+# Email for Let's Encrypt notifications (REQUIRED if letsencrypt enabled)
+apache_letsencrypt_email: ""
+
+# Certbot options
+apache_certbot_agree_tos: true
+apache_certbot_staging: false    # Set true for testing (avoids rate limits)
+apache_certbot_renew_hook: "systemctl reload httpd"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SSL PROTOCOL & CIPHER SETTINGS (applies to all SSL VirtualHosts)
+# ─────────────────────────────────────────────────────────────────────────────
+
+apache_ssl_protocol: "all -SSLv3 -TLSv1 -TLSv1.1"
+apache_ssl_cipher_suite: "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384"
+apache_ssl_honor_cipher_order: "Off"
+apache_ssl_compression: "Off"
+apache_ssl_session_tickets: "Off"
+apache_ssl_stapling: "On"
+apache_ssl_stapling_cache: "shmcb:/var/run/ocsp(128000)"
+
+# HSTS (HTTP Strict Transport Security) header
+apache_hsts_enabled: true
+apache_hsts_max_age: 31536000    # 1 year in seconds
+apache_hsts_include_subdomains: true
+apache_hsts_preload: false

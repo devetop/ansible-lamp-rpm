@@ -1,0 +1,168 @@
+---
+# group_vars/webservers-ssl-example.yml
+#
+# Copy this to group_vars/webservers.yml and customize for SSL setup.
+#
+# This file demonstrates BOTH SSL options:
+#   Option A: Manual SSL certificates
+#   Option B: Let's Encrypt (Certbot)
+
+# =============================================================================
+# OPTION A: MANUAL SSL CERTIFICATES
+# =============================================================================
+# Use this when you already have SSL certificates from a CA or self-signed.
+#
+# Requirements:
+#   1. Certificate files must exist on the server before running playbook
+#   2. Files must be readable by root
+#   3. Path must be absolute
+
+# Enable SSL globally
+apache_enable_ssl: true
+
+# Disable Let's Encrypt (we're using manual certs)
+apache_enable_letsencrypt: false
+
+# Define certificate paths per domain
+apache_ssl_certificates:
+  # Main domain with full chain
+  example.com:
+    cert: /etc/ssl/certs/example.com.crt
+    key: /etc/ssl/private/example.com.key
+    chain: /etc/ssl/certs/example.com-chain.crt
+
+  # Another domain
+  mysite.net:
+    cert: /etc/ssl/certs/mysite.net.crt
+    key: /etc/ssl/private/mysite.net.key
+
+  # Wildcard certificate for subdomains
+  # (covers *.auto.rfan.my.id AND auto.rfan.my.id)
+  auto.rfan.my.id:
+    cert: /etc/ssl/certs/wildcard.auto.rfan.my.id.crt
+    key: /etc/ssl/private/wildcard.auto.rfan.my.id.key
+
+# Fallback self-signed cert (used if domain not in apache_ssl_certificates)
+apache_ssl_default_cert: /etc/pki/tls/certs/localhost.crt
+apache_ssl_default_key: /etc/pki/tls/private/localhost.key
+
+# =============================================================================
+# OPTION B: LET'S ENCRYPT (CERTBOT) — Automatic SSL
+# =============================================================================
+# Uncomment these to use Let's Encrypt instead of manual certificates.
+#
+# Requirements:
+#   1. Domain DNS must point to this server
+#   2. Port 80/443 must be open in firewall
+#   3. Apache must be running
+#   4. Valid email required for notifications
+
+# apache_enable_ssl: true
+# apache_enable_letsencrypt: true
+# apache_letsencrypt_email: "admin@example.com"
+
+# Optional: Use staging server for testing (avoids rate limits)
+# apache_certbot_staging: true
+
+# Optional: Custom renewal hook
+# apache_certbot_renew_hook: "systemctl reload httpd && /usr/local/bin/notify-renewal.sh"
+
+# =============================================================================
+# SSL PROTOCOL & CIPHER CONFIGURATION (applies to both options)
+# =============================================================================
+
+# Modern SSL/TLS configuration (recommended)
+apache_ssl_protocol: "all -SSLv3 -TLSv1 -TLSv1.1"
+
+apache_ssl_cipher_suite: "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384"
+
+apache_ssl_honor_cipher_order: "Off"
+apache_ssl_compression: "Off"
+apache_ssl_session_tickets: "Off"
+
+# OCSP Stapling (improves SSL performance)
+apache_ssl_stapling: true
+apache_ssl_stapling_cache: "shmcb:/var/run/ocsp(128000)"
+
+# =============================================================================
+# HSTS (HTTP Strict Transport Security)
+# =============================================================================
+# Forces browsers to ALWAYS use HTTPS for your domain.
+# WARNING: Only enable after confirming SSL works properly!
+
+apache_hsts_enabled: true
+apache_hsts_max_age: 31536000         # 1 year
+apache_hsts_include_subdomains: true  # Apply to *.example.com
+apache_hsts_preload: false            # Submit to browser preload lists
+
+# =============================================================================
+# HOSTING USERS (same as before, SSL is applied automatically)
+# =============================================================================
+
+hosting_users:
+  - username: devops
+    php_versions:
+      - "8.2"
+    domains:
+      - domain: auto.rfan.my.id
+        php_version: "8.2"
+        subdomains:
+          - blog
+          - shop
+          - api
+
+# =============================================================================
+# DEPLOYMENT WORKFLOWS
+# =============================================================================
+
+# ── Option A: Manual Certificates Workflow ──────────────────────────────────
+#
+# 1. Obtain SSL certificates (from CA or generate self-signed)
+# 2. Copy certificates to server:
+#    scp example.com.crt root@server:/etc/ssl/certs/
+#    scp example.com.key root@server:/etc/ssl/private/
+#    chmod 644 /etc/ssl/certs/example.com.crt
+#    chmod 600 /etc/ssl/private/example.com.key
+#
+# 3. Configure this file with certificate paths
+# 4. Deploy:
+#    ansible-playbook playbooks/site.yml --tags apache
+#
+# 5. Test SSL:
+#    curl -v https://example.com
+#    openssl s_client -connect example.com:443
+
+# ── Option B: Let's Encrypt Workflow ────────────────────────────────────────
+#
+# 1. Ensure DNS points to server
+# 2. Set apache_enable_letsencrypt: true
+# 3. Set apache_letsencrypt_email
+# 4. Deploy:
+#    ansible-playbook playbooks/site.yml --tags apache,ssl,letsencrypt
+#
+# 5. Certificates auto-renew via certbot-renew.timer
+# 6. Manual renewal test:
+#    certbot renew --dry-run
+
+# =============================================================================
+# MIXED MODE: Some domains manual, some Let's Encrypt
+# =============================================================================
+# You can use BOTH options simultaneously:
+#
+# apache_enable_ssl: true
+# apache_enable_letsencrypt: true
+# apache_letsencrypt_email: "admin@example.com"
+#
+# apache_ssl_certificates:
+#   # This domain uses manual cert
+#   legacy-site.com:
+#     cert: /etc/ssl/certs/legacy.crt
+#     key: /etc/ssl/private/legacy.key
+#
+# # All other domains will get Let's Encrypt certificates automatically
+#
+# hosting_users:
+#   - username: user1
+#     domains:
+#       - domain: legacy-site.com       # Uses manual cert
+#       - domain: new-site.com          # Gets Let's Encrypt cert
