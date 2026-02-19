@@ -82,22 +82,38 @@
   loop: "{{ hosting_users }}"
   tags: [apache, users, directories]
 
-- name: Build list of domains with user info
+# Build a flat list of {username, domain, php_version, subdomain} dicts.
+# This avoids the invalid subelements('1.subdomains') syntax.
+- name: Build flat subdomain entries list
   ansible.builtin.set_fact:
-    domain_list: "{{ domain_list | default([]) + [{'user': item.0.username, 'domain': item.1, 'subdomains': item.1.subdomains | default([])}] }}"
-  loop: "{{ hosting_users | subelements('domains', skip_missing=True) }}"
-  when: item.0.domains is defined
-  tags: [apache, users, directories, always]
+    subdomain_entries: >-
+      {%- set result = [] -%}
+      {%- for user in hosting_users -%}
+        {%- for domain in user.domains | default([]) -%}
+          {%- for sub in domain.subdomains | default([]) -%}
+            {%- set _ = result.append({
+              'username':    user.username,
+              'domain':      domain.domain,
+              'php_version': domain.php_version | default(user.php_versions[0] | default('8.1')),
+              'subdomain':   sub
+            }) -%}
+          {%- endfor -%}
+        {%- endfor -%}
+      {%- endfor -%}
+      {{ result }}
+  tags: [apache, users, directories, vhosts]
 
 - name: Create subdomain directories
   ansible.builtin.file:
-    path: "/home/{{ item.0.user }}/{{ item.1 }}"
+    path: "/home/{{ item.username }}/{{ item.subdomain }}"
     state: directory
-    owner: "{{ item.0.user }}"
-    group: "{{ item.0.user }}"
+    owner: "{{ item.username }}"
+    group: "{{ item.username }}"
     mode: '0755'
-  loop: "{{ domain_list | subelements('subdomains', skip_missing=True) }}"
-  when: domain_list | length > 0
+  loop: "{{ subdomain_entries }}"
+  loop_control:
+    label: "/home/{{ item.username }}/{{ item.subdomain }}"
+  when: subdomain_entries | length > 0
   tags: [apache, users, directories]
 
 - name: Set SELinux context for web content directories
@@ -147,38 +163,29 @@
   vars:
     username: "{{ item.0.username }}"
     domain: "{{ item.1.domain }}"
-    php_version: "{{ item.1.php_version | default(item.0.php_version | default('8.1')) }}"
+    user_default_php: "{{ item.0.php_versions[0] | default('8.1') }}"
+    php_version: "{{ item.1.php_version | default(user_default_php) }}"
     document_root: "/home/{{ item.0.username }}/public_html"
   notify: restart apache
   tags: [apache, vhosts]
 
-- name: Build list of domains with user info
-  ansible.builtin.set_fact:
-    domain_list: "{{ domain_list | default([]) + [{
-      'user': item.0.username,
-      'domain': item.1,
-      'subdomains': item.1.subdomains | default([]),
-      'user_php_versions': item.0.php_versions
-    }] }}"
-  loop: "{{ hosting_users | subelements('domains', skip_missing=True) }}"
-  when: item.0.domains is defined
-  tags: [apache, vhosts, always]
-
 - name: Generate VirtualHost for subdomains
   ansible.builtin.template:
     src: vhost-subdomain.conf.j2
-    dest: "/etc/httpd/sites-enabled/{{ item.0.user }}-{{ item.1 }}.{{ item.0.domain.domain | replace('.', '_') }}.conf"
+    dest: "/etc/httpd/sites-enabled/{{ item.username }}-{{ item.subdomain }}.{{ item.domain | replace('.', '_') }}.conf"
     owner: root
     group: root
     mode: '0644'
-  loop: "{{ domain_list | subelements('subdomains', skip_missing=True) }}"
+  loop: "{{ subdomain_entries }}"
+  loop_control:
+    label: "{{ item.username }}-{{ item.subdomain }}.{{ item.domain }}"
   vars:
-    username: "{{ item.0.user }}"
-    domain: "{{ item.0.domain.domain }}"
-    subdomain: "{{ item.1 }}"
-    php_version: "{{ item.0.domain.php_version | default(item.0.user_php_versions[0] | default('8.1')) }}"
-    document_root: "/home/{{ item.0.user }}/{{ item.1 }}"
-  when: item.0.subdomains | length > 0
+    username: "{{ item.username }}"
+    domain: "{{ item.domain }}"
+    subdomain: "{{ item.subdomain }}"
+    php_version: "{{ item.php_version }}"
+    document_root: "/home/{{ item.username }}/{{ item.subdomain }}"
+  when: subdomain_entries | length > 0
   notify: restart apache
   tags: [apache, vhosts]
 
