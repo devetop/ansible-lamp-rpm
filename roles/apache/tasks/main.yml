@@ -17,8 +17,6 @@
     line: "LoadModule {{ item }}_module modules/mod_{{ item }}.so"
     create: yes
   loop:
-    - proxy
-    - proxy_fcgi
     - rewrite
     - headers
     - expires

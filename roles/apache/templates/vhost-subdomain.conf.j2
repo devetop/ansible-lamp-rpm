@@ -89,11 +89,6 @@
     SSLCipherSuite {{ apache_ssl_cipher_suite | default('ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256') }}
     SSLHonorCipherOrder {{ apache_ssl_honor_cipher_order | default('Off') }}
 
-{% if apache_ssl_stapling | default(true) | bool %}
-    SSLUseStapling {{ apache_ssl_stapling | ternary('On', 'Off') }}
-    SSLStaplingCache {{ apache_ssl_stapling_cache | default('shmcb:/var/run/ocsp(128000)') }}
-{% endif %}
-
     Header always set X-Frame-Options "SAMEORIGIN"
     Header always set X-Content-Type-Options "nosniff"
     Header always set X-XSS-Protection "1; mode=block"
