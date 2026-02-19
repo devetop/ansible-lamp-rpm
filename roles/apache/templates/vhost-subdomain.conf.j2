@@ -65,14 +65,14 @@
     # Let's Encrypt certificates
     SSLCertificateFile /etc/letsencrypt/live/{{ fqdn }}/fullchain.pem
     SSLCertificateKeyFile /etc/letsencrypt/live/{{ fqdn }}/privkey.pem
-{% elif fqdn in (apache_ssl_certificates | default({}).keys()) %}
+{% elif apache_ssl_certificates is defined and fqdn in apache_ssl_certificates %}
     # Manual SSL certificate for this subdomain
     SSLCertificateFile {{ apache_ssl_certificates[fqdn].cert }}
     SSLCertificateKeyFile {{ apache_ssl_certificates[fqdn].key }}
 {% if apache_ssl_certificates[fqdn].chain is defined %}
     SSLCertificateChainFile {{ apache_ssl_certificates[fqdn].chain }}
 {% endif %}
-{% elif domain in (apache_ssl_certificates | default({}).keys()) %}
+{% elif apache_ssl_certificates is defined and domain in apache_ssl_certificates %}
     # Fallback to parent domain certificate (wildcard)
     SSLCertificateFile {{ apache_ssl_certificates[domain].cert }}
     SSLCertificateKeyFile {{ apache_ssl_certificates[domain].key }}
