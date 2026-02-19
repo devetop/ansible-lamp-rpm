@@ -66,7 +66,7 @@
     # Let's Encrypt certificates
     SSLCertificateFile /etc/letsencrypt/live/{{ domain }}/fullchain.pem
     SSLCertificateKeyFile /etc/letsencrypt/live/{{ domain }}/privkey.pem
-{% elif domain in (apache_ssl_certificates | default({}).keys()) %}
+{% elif domain in (apache_ssl_certificates | default({})) %}
     # Manual SSL certificates
     SSLCertificateFile {{ apache_ssl_certificates[domain].cert }}
     SSLCertificateKeyFile {{ apache_ssl_certificates[domain].key }}
