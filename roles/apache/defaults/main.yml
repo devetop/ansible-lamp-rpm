@@ -109,11 +109,6 @@ apache_certbot_renew_hook: "systemctl reload httpd"
 # SSL PROTOCOL & CIPHER SETTINGS (applies to all SSL VirtualHosts)
 # ─────────────────────────────────────────────────────────────────────────────
 
-apache_ssl_protocol: "all -SSLv3 -TLSv1 -TLSv1.1"
-apache_ssl_cipher_suite: "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384"
-apache_ssl_honor_cipher_order: "Off"
-apache_ssl_compression: "Off"
-apache_ssl_session_tickets: "Off"
 apache_ssl_stapling: "On"
 apache_ssl_stapling_cache: "shmcb:/var/run/ocsp(128000)"
 

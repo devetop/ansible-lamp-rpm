@@ -26,3 +26,10 @@ mariadb_users:
     password: "{{ vault_wp_password | default('TempWpPassword123!') }}"
     priv: "demo_app.*:ALL"
     host: localhost
+
+apache_enable_ssl: true
+apache_enable_letsencrypt: false
+apache_ssl_certificates:
+  auto.rfan.my.id:
+    cert: /home/ec2-user/myssl/rfan.my.id_ecc/fullchain.cer
+    key: /home/ec2-user/myssl/rfan.my.id_ecc/rfan.my.id.key
