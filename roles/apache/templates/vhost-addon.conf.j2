@@ -1,4 +1,4 @@
-{%- set fqdn = subdomain ~ '.' ~ domain -%}
+{%- set fqdn = domain -%}
 {%- set php_ver_clean = php_version | replace('.', '') -%}
 # VirtualHost for {{ fqdn }}
 # User: {{ username }}
@@ -32,8 +32,8 @@
     </FilesMatch>
 {% endif %}
 
-    ErrorLog /var/log/httpd/{{ username }}-{{ subdomain }}.{{ domain }}-error.log
-    CustomLog /var/log/httpd/{{ username }}-{{ subdomain }}.{{ domain }}-access.log combined
+    ErrorLog /var/log/httpd/{{ username }}-{{ domain }}-error.log
+    CustomLog /var/log/httpd/{{ username }}-{{ domain }}-access.log combined
 </VirtualHost>
 
 {% if apache_enable_ssl | default(false) | bool %}
@@ -66,14 +66,14 @@
     SSLCertificateFile /etc/letsencrypt/live/{{ fqdn }}/fullchain.pem
     SSLCertificateKeyFile /etc/letsencrypt/live/{{ fqdn }}/privkey.pem
 {% elif apache_ssl_certificates is defined and fqdn in apache_ssl_certificates %}
-    # Manual SSL certificate for this subdomain
+    # Manual SSL certificate for this domain
     SSLCertificateFile {{ apache_ssl_certificates[fqdn].cert }}
     SSLCertificateKeyFile {{ apache_ssl_certificates[fqdn].key }}
 {% if apache_ssl_certificates[fqdn].chain is defined %}
     SSLCertificateChainFile {{ apache_ssl_certificates[fqdn].chain }}
 {% endif %}
 {% elif apache_ssl_certificates is defined and domain in apache_ssl_certificates %}
-    # Fallback to parent domain certificate (wildcard)
+    # Fallback to parent domain certificate (wildcard) – optional
     SSLCertificateFile {{ apache_ssl_certificates[domain].cert }}
     SSLCertificateKeyFile {{ apache_ssl_certificates[domain].key }}
 {% if apache_ssl_certificates[domain].chain is defined %}
@@ -100,7 +100,8 @@
     Header always set Strict-Transport-Security "max-age={{ apache_hsts_max_age | default(31536000) }}{% if apache_hsts_include_subdomains | default(true) | bool %}; includeSubDomains{% endif %}{% if apache_hsts_preload | default(false) | bool %}; preload{% endif %}"
 {% endif %}
 
-    ErrorLog /var/log/httpd/{{ username }}-{{ subdomain }}.{{ domain }}-ssl-error.log
-    CustomLog /var/log/httpd/{{ username }}-{{ subdomain }}.{{ domain }}-ssl-access.log combined
+    # Logging
+    ErrorLog /var/log/httpd/{{ username }}-{{ domain }}-ssl-error.log
+    CustomLog /var/log/httpd/{{ username }}-{{ domain }}-ssl-access.log combined
 </VirtualHost>
 {% endif %}

@@ -7,10 +7,10 @@ hosting_users:
       - domain: rfan.my.id
         php_version: "8.1"
         subdomains:
-          - auto
-      - domain: autophp82.rfan.my.id
-        php_version: "8.2"
-        subdomains: []
+          - name: auto
+        addons:
+          - domain: autophp82.rfan.my.id
+            php_version: "8.2"
     groups:
       - wheel
     php_custom_settings:

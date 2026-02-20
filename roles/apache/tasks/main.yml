@@ -80,20 +80,30 @@
   loop: "{{ hosting_users }}"
   tags: [apache, users, directories]
 
-# Build a flat list of {username, domain, php_version, subdomain} dicts.
-# This avoids the invalid subelements('1.subdomains') syntax.
-- name: Build flat subdomain entries list
+- name: Build list of all directories (subdomains and addons)
   ansible.builtin.set_fact:
-    subdomain_entries: >-
+    all_directory_entries: >-
       {%- set result = [] -%}
       {%- for user in hosting_users -%}
         {%- for domain in user.domains | default([]) -%}
+          {# Proses subdomain #}
           {%- for sub in domain.subdomains | default([]) -%}
             {%- set _ = result.append({
               'username':    user.username,
+              'dir':         sub,
+              'type':        'subdomain',
               'domain':      domain.domain,
-              'php_version': domain.php_version | default(user.php_versions[0] | default('8.1')),
-              'subdomain':   sub
+              'php_version': domain.php_version | default(user.php_versions[0] | default('8.1'))
+            }) -%}
+          {%- endfor -%}
+          {# Proses addon domain #}
+          {%- for addon in domain.addon | default([]) -%}
+            {%- set _ = result.append({
+              'username':    user.username,
+              'dir':         addon,
+              'type':        'addon',
+              'main_domain': domain.domain,
+              'php_version': domain.php_version | default(user.php_versions[0] | default('8.1'))
             }) -%}
           {%- endfor -%}
         {%- endfor -%}
@@ -101,17 +111,17 @@
       {{ result }}
   tags: [apache, users, directories, vhosts]
 
-- name: Create subdomain directories
+- name: Create directories for subdomains and addons
   ansible.builtin.file:
-    path: "/home/{{ item.username }}/{{ item.subdomain }}"
+    path: "/home/{{ item.username }}/{{ item.dir }}"
     state: directory
     owner: "{{ item.username }}"
     group: "{{ item.username }}"
     mode: '0755'
-  loop: "{{ subdomain_entries }}"
+  loop: "{{ all_directory_entries }}"
   loop_control:
-    label: "/home/{{ item.username }}/{{ item.subdomain }}"
-  when: subdomain_entries | length > 0
+    label: "/home/{{ item.username }}/{{ item.dir }}"
+  when: all_directory_entries | length > 0
   tags: [apache, users, directories]
 
 - name: Set SELinux context for web content directories
@@ -167,25 +177,79 @@
   notify: restart apache
   tags: [apache, vhosts]
 
-- name: Generate VirtualHost for subdomains
-  ansible.builtin.template:
-    src: vhost-subdomain.conf.j2
-    dest: "/etc/httpd/sites-enabled/{{ item.username }}-{{ item.subdomain }}.{{ item.domain | replace('.', '_') }}.conf"
-    owner: root
-    group: root
-    mode: '0644'
-  loop: "{{ subdomain_entries }}"
-  loop_control:
-    label: "{{ item.username }}-{{ item.subdomain }}.{{ item.domain }}"
+- name: Build list of vhost entries (subdomains and addons)
+  hosts: all
   vars:
-    username: "{{ item.username }}"
-    domain: "{{ item.domain }}"
-    subdomain: "{{ item.subdomain }}"
-    php_version: "{{ item.php_version }}"
-    document_root: "/home/{{ item.username }}/{{ item.subdomain }}"
-  when: subdomain_entries | length > 0
-  notify: restart apache
-  tags: [apache, vhosts]
+    hosting_users: "{{ lookup('file', 'users.yml') | from_yaml }}"
+  tasks:
+    - name: Prepare subdomain entries
+      ansible.builtin.set_fact:
+        subdomain_entries: >-
+          {{ subdomain_entries | default([]) +
+            [{
+              'username': item.0.username,
+              'domain': item.1.domain,
+              'subdomain': item.2.name if item.2 is mapping else item.2,
+              'php_version': item.2.php_version | default(item.1.php_version)
+            }]
+          }}
+      loop: "{{ hosting_users | subelements('domains', skip_missing=True) | subelements('subdomains', skip_missing=True) }}"
+      loop_control:
+        label: "{{ item.0.username }}-{{ item.2 }}"
+
+    - name: Prepare addon domain entries
+      ansible.builtin.set_fact:
+        addon_entries: >-
+          {{ addon_entries | default([]) +
+            [{
+              'username': item.0.username,
+              'domain': item.2.domain if item.2 is mapping else item.2,
+              'subdomain': '',   # atau sesuaikan dengan kebutuhan template
+              'php_version': item.2.php_version | default(item.1.php_version)
+            }]
+          }}
+      loop: "{{ hosting_users | subelements('domains', skip_missing=True) | subelements('addons', skip_missing=True) }}"
+      loop_control:
+        label: "{{ item.0.username }}-{{ item.2 }}"
+
+    - name: Generate VirtualHost for subdomains
+      ansible.builtin.template:
+        src: vhost-subdomain.conf.j2
+        dest: "/etc/httpd/sites-enabled/{{ item.username }}-{{ item.subdomain }}.{{ item.domain | replace('.', '_') }}.conf"
+        owner: root
+        group: root
+        mode: '0644'
+      loop: "{{ subdomain_entries }}"
+      loop_control:
+        label: "{{ item.username }}-{{ item.subdomain }}.{{ item.domain }}"
+      vars:
+        username: "{{ item.username }}"
+        domain: "{{ item.domain }}"
+        subdomain: "{{ item.subdomain }}"
+        php_version: "{{ item.php_version }}"
+        document_root: "/home/{{ item.username }}/{{ item.subdomain }}"
+      when: subdomain_entries | length > 0
+      notify: restart apache
+      tags: [apache, vhosts]
+
+    - name: Generate VirtualHost for addon domains
+      ansible.builtin.template:
+        src: vhost-addon.conf.j2   # atau gunakan template yang sama dengan penyesuaian
+        dest: "/etc/httpd/sites-enabled/{{ item.username }}-{{ item.domain | replace('.', '_') }}.conf"
+        owner: root
+        group: root
+        mode: '0644'
+      loop: "{{ addon_entries }}"
+      loop_control:
+        label: "{{ item.username }}-{{ item.domain }}"
+      vars:
+        username: "{{ item.username }}"
+        domain: "{{ item.domain }}"
+        php_version: "{{ item.php_version }}"
+        document_root: "/home/{{ item.username }}/{{ item.domain }}"   # asumsi addon domain di subfolder nama domain
+      when: addon_entries | length > 0
+      notify: restart apache
+      tags: [apache, vhosts]
 
 - name: Set proper ACLs for Apache access
   ansible.posix.acl:
