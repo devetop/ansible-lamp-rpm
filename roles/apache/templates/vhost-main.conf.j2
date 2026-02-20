@@ -80,6 +80,17 @@
     SSLCertificateKeyFile {{ apache_ssl_default_key | default('/etc/pki/tls/private/localhost.key') }}
 {% endif %}
 
+    <FilesMatch "\.(cgi|shtml|phtml|php)$">
+            SSLOptions +StdEnvVars
+    </FilesMatch>
+    <Directory /usr/lib/cgi-bin>
+            SSLOptions +StdEnvVars
+    </Directory>
+    BrowserMatch "MSIE [2-6]" \
+            nokeepalive ssl-unclean-shutdown \
+            downgrade-1.0 force-response-1.0
+    BrowserMatch "MSIE [17-9]" ssl-unclean-shutdown
+
     # SSL Protocol and Cipher
     SSLProtocol {{ apache_ssl_protocol | default('all -SSLv3 -TLSv1 -TLSv1.1') }}
     SSLCipherSuite {{ apache_ssl_cipher_suite | default('ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256') }}

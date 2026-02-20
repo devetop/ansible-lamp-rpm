@@ -13,7 +13,6 @@ apache_service: httpd
 # Apache configuration paths
 apache_conf_dir: /etc/httpd/conf
 apache_conf_file: /etc/httpd/conf/httpd.conf
-apache_vhosts_dir: /etc/httpd/vhosts.d
 apache_modules_dir: /etc/httpd/conf.modules.d
 apache_log_dir: /var/log/httpd
 
