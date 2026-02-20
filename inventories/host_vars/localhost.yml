@@ -4,17 +4,24 @@ hosting_users:
       - "8.1"
       - "8.2"
     domains:
-      - domain: auto.rfan.my.id
-        php_version: "8.2"
+      - domain: rfan.my.id
+        php_version: "8.1"
         subdomains:
-          - blog
-          - shop
-          - api
+          - auto
+      - domain: autophp82.rfan.my.id
+        php_version: "8.2"
+        subdomains: []
     groups:
       - wheel
     php_custom_settings:
       max_execution_time: 600
       memory_limit: 512M
+update_packages: false
+
+mariadb_root_password: "{{ vault_mariadb_root_password | default('RootPassword123!ChangeMe') }}"
+mariadb_create_databases: false
+mariadb_create_users: false
+mariadb_save_credentials: false
 
 mariadb_databases:
   - name: demo_app
@@ -23,13 +30,13 @@ mariadb_databases:
 
 mariadb_users:
   - name: demo_app
-    password: "{{ vault_wp_password | default('TempWpPassword123!') }}"
+    password: "{{ vault_db_password | default('TempDbPassword123!') }}"
     priv: "demo_app.*:ALL"
     host: localhost
 
 apache_enable_ssl: true
 apache_enable_letsencrypt: false
 apache_ssl_certificates:
-  auto.rfan.my.id:
+  rfan.my.id:
     cert: /home/ec2-user/myssl/rfan.my.id_ecc/fullchain.cer
     key: /home/ec2-user/myssl/rfan.my.id_ecc/rfan.my.id.key
