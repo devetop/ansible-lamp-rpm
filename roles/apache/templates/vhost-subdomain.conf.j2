@@ -21,17 +21,18 @@
     </Directory>
 
 {% if apache_enable_ssl | default(false) | bool %}
-    # SSL enabled — redirect to HTTPS
+    # SSL is enabled — redirect HTTP to HTTPS
     RewriteEngine On
     RewriteCond %{HTTPS} off
     RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 {% else %}
-    # PHP-FPM proxy (HTTP only)
+    # PHP-FPM proxy configuration (HTTP only)
     <FilesMatch \.php$>
         SetHandler "proxy:unix:/var/opt/remi/php{{ php_ver_clean }}/run/php-fpm/{{ username }}.sock|fcgi://localhost"
     </FilesMatch>
 {% endif %}
 
+    # Logging
     ErrorLog /var/log/httpd/{{ username }}-{{ subdomain }}.{{ domain }}-error.log
     CustomLog /var/log/httpd/{{ username }}-{{ subdomain }}.{{ domain }}-access.log combined
 </VirtualHost>
@@ -73,7 +74,7 @@
     SSLCertificateChainFile {{ apache_ssl_certificates[fqdn].chain }}
 {% endif %}
 {% elif apache_ssl_certificates is defined and domain in apache_ssl_certificates %}
-    # Fallback to parent domain certificate (wildcard)
+    # Fallback to parent domain certificate (wildcard) – optional
     SSLCertificateFile {{ apache_ssl_certificates[domain].cert }}
     SSLCertificateKeyFile {{ apache_ssl_certificates[domain].key }}
 {% if apache_ssl_certificates[domain].chain is defined %}
@@ -100,6 +101,7 @@
     Header always set Strict-Transport-Security "max-age={{ apache_hsts_max_age | default(31536000) }}{% if apache_hsts_include_subdomains | default(true) | bool %}; includeSubDomains{% endif %}{% if apache_hsts_preload | default(false) | bool %}; preload{% endif %}"
 {% endif %}
 
+    # Logging
     ErrorLog /var/log/httpd/{{ username }}-{{ subdomain }}.{{ domain }}-ssl-error.log
     CustomLog /var/log/httpd/{{ username }}-{{ subdomain }}.{{ domain }}-ssl-access.log combined
 </VirtualHost>
