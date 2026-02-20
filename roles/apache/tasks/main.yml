@@ -105,7 +105,7 @@
             }) -%}
           {%- endfor -%}
           {# Proses addon domain #}
-          {%- for addon in domain.addon | default([]) -%}
+          {%- for addon in domain.addons | default([]) -%}
             {%- set addon_domain = addon if addon is string else addon.domain -%}
             {%- if addon is mapping -%}
               {%- set addon_php = addon.php_version | default(domain_default_php) -%}
