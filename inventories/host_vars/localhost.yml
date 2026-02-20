@@ -33,6 +33,10 @@ mariadb_users:
     password: "{{ vault_db_password | default('TempDbPassword123!') }}"
     priv: "demo_app.*:ALL"
     host: localhost
+  - name: demo_app_1
+    password: "{{ vault_db_password | default('TempDbPassword123!') }}"
+    priv: "demo_app_1.*:ALL"
+    host: localhost
 
 apache_enable_ssl: true
 apache_enable_letsencrypt: false
