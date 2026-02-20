@@ -201,7 +201,7 @@
     owner: root
     group: root
     mode: '0644'
-  loop: "{{ all_directory_entries }}"
+  loop: "{{ all_directory_entries | selectattr('type', '==', 'subdomain') | list }}"
   loop_control:
     label: "{{ item.username }}-{{ item.dir }}.{{ item.domain }}"
   vars:
@@ -210,7 +210,6 @@
     subdomain: "{{ item.dir }}"
     php_version: "{{ item.php_version }}"
     document_root: "/home/{{ item.username }}/{{ item.dir }}"
-  when: item.type == 'subdomain'
   notify: restart apache
   tags: [apache, vhosts]
 
@@ -224,7 +223,7 @@
     owner: root
     group: root
     mode: '0644'
-  loop: "{{ all_directory_entries }}"
+  loop: "{{ all_directory_entries | selectattr('type', '==', 'addon') | list }}"
   loop_control:
     label: "{{ item.username }}-{{ item.dir }}"
   vars:
@@ -232,8 +231,7 @@
     domain: "{{ item.dir }}"
     php_version: "{{ item.php_version }}"
     document_root: "/home/{{ item.username }}/{{ item.dir }}"
-    main_domain: "{{ item.main_domain | default('') }}"   # optional, jika template membutuhkan
-  when: item.type == 'addon'
+    main_domain: "{{ item.main_domain | default('') }}"
   notify: restart apache
   tags: [apache, vhosts]
 
