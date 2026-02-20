@@ -27,6 +27,9 @@ mariadb_databases:
   - name: demo_app
     collation: utf8mb4_unicode_ci
     encoding: utf8mb4
+  - name: demo_app_1
+    collation: utf8mb4_unicode_ci
+    encoding: utf8mb4
 
 mariadb_users:
   - name: demo_app
