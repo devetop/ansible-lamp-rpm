@@ -85,25 +85,39 @@
     all_directory_entries: >-
       {%- set result = [] -%}
       {%- for user in hosting_users -%}
+        {%- set user_default_php = user.php_versions | default([]) | first | default('8.1') -%}
         {%- for domain in user.domains | default([]) -%}
+          {%- set domain_default_php = domain.php_version | default(user_default_php) -%}
           {# Proses subdomain #}
           {%- for sub in domain.subdomains | default([]) -%}
+            {%- set sub_dir = sub if sub is string else sub.name -%}
+            {%- if sub is mapping -%}
+              {%- set sub_php = sub.php_version | default(domain_default_php) -%}
+            {%- else -%}
+              {%- set sub_php = domain_default_php -%}
+            {%- endif -%}
             {%- set _ = result.append({
               'username':    user.username,
-              'dir':         sub,
+              'dir':         sub_dir,
               'type':        'subdomain',
               'domain':      domain.domain,
-              'php_version': domain.php_version | default(user.php_versions[0] | default('8.1'))
+              'php_version': sub_php
             }) -%}
           {%- endfor -%}
           {# Proses addon domain #}
           {%- for addon in domain.addon | default([]) -%}
+            {%- set addon_domain = addon if addon is string else addon.domain -%}
+            {%- if addon is mapping -%}
+              {%- set addon_php = addon.php_version | default(domain_default_php) -%}
+            {%- else -%}
+              {%- set addon_php = domain_default_php -%}
+            {%- endif -%}
             {%- set _ = result.append({
               'username':    user.username,
-              'dir':         addon,
+              'dir':         addon_domain,
               'type':        'addon',
               'main_domain': domain.domain,
-              'php_version': domain.php_version | default(user.php_versions[0] | default('8.1'))
+              'php_version': addon_php
             }) -%}
           {%- endfor -%}
         {%- endfor -%}
@@ -176,55 +190,6 @@
     document_root: "/home/{{ item.0.username }}/public_html"
   notify: restart apache
   tags: [apache, vhosts]
-
-# =============================================================================
-# Update task: Build list of all directories (subdomains and addons)
-# Modifikasi agar mendukung item berupa string atau dict
-# =============================================================================
-- name: Build list of all directories (subdomains and addons)
-  ansible.builtin.set_fact:
-    all_directory_entries: >-
-      {%- set result = [] -%}
-      {%- for user in hosting_users -%}
-        {%- set user_default_php = user.php_versions | default([]) | first | default('8.1') -%}
-        {%- for domain in user.domains | default([]) -%}
-          {%- set domain_default_php = domain.php_version | default(user_default_php) -%}
-          {# Proses subdomain #}
-          {%- for sub in domain.subdomains | default([]) -%}
-            {%- set sub_dir = sub if sub is string else sub.name -%}
-            {%- if sub is mapping -%}
-              {%- set sub_php = sub.php_version | default(domain_default_php) -%}
-            {%- else -%}
-              {%- set sub_php = domain_default_php -%}
-            {%- endif -%}
-            {%- set _ = result.append({
-              'username':    user.username,
-              'dir':         sub_dir,
-              'type':        'subdomain',
-              'domain':      domain.domain,
-              'php_version': sub_php
-            }) -%}
-          {%- endfor -%}
-          {# Proses addon domain #}
-          {%- for addon in domain.addon | default([]) -%}
-            {%- set addon_domain = addon if addon is string else addon.domain -%}
-            {%- if addon is mapping -%}
-              {%- set addon_php = addon.php_version | default(domain_default_php) -%}
-            {%- else -%}
-              {%- set addon_php = domain_default_php -%}
-            {%- endif -%}
-            {%- set _ = result.append({
-              'username':    user.username,
-              'dir':         addon_domain,
-              'type':        'addon',
-              'main_domain': domain.domain,
-              'php_version': addon_php
-            }) -%}
-          {%- endfor -%}
-        {%- endfor -%}
-      {%- endfor -%}
-      {{ result }}
-  tags: [apache, users, directories, vhosts]
 
 # =============================================================================
 # Generate VirtualHost untuk subdomain
