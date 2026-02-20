@@ -144,7 +144,6 @@
     setype: httpd_sys_content_t
     state: present
   loop: "{{ hosting_users }}"
-  notify: restorecon home directories
   tags: [apache, selinux]
 
 - name: Apply SELinux contexts immediately
@@ -158,14 +157,13 @@
     target: '/home/{{ item.username }}/public_html(/.*)?'
     setype: httpd_sys_rw_content_t
     state: present
-  become: yes
+  loop: "{{ hosting_users }}"
   tags: [apache, selinux]
 
 - name: Apply the SELinux context to each user's public_html directory
-  ansible.builtin.command:
-    cmd: restorecon -Rv "/home/{{ item.username }}/public_html"
+  ansible.builtin.command: "restorecon -Rv /home/{{ item.username }}/public_html"
   loop: "{{ hosting_users }}"
-  become: yes
+  changed_when: false
   tags: [apache, selinux]
 
 - name: Set SELinux context for each created directory (subdomains and addons)
@@ -177,17 +175,17 @@
   loop_control:
     label: "Set context for /home/{{ item.username }}/{{ item.dir }}"
   when: all_directory_entries | length > 0
-  become: yes
+  changed_when: false
+  notify: restorecon home directories
   tags: [apache, selinux]
 
 - name: Apply the SELinux context to each created directory (subdomains and addons)
-  ansible.builtin.command:
-    cmd: "restorecon -Rv '/home/{{ item.username }}/{{ item.dir }}'"
+  ansible.builtin.command: "restorecon -Rv '/home/{{ item.username }}/{{ item.dir }}'"
   loop: "{{ all_directory_entries }}"
   loop_control:
     label: "Restorecon /home/{{ item.username }}/{{ item.dir }}"
   when: all_directory_entries | length > 0
-  become: yes
+  changed_when: false
   tags: [apache, selinux]
 
 - name: Allow Apache to connect to network (for proxying to PHP-FPM)
