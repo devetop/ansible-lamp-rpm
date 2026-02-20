@@ -186,11 +186,17 @@
     all_directory_entries: >-
       {%- set result = [] -%}
       {%- for user in hosting_users -%}
+        {%- set user_default_php = user.php_versions | default([]) | first | default('8.1') -%}
         {%- for domain in user.domains | default([]) -%}
+          {%- set domain_default_php = domain.php_version | default(user_default_php) -%}
           {# Proses subdomain #}
           {%- for sub in domain.subdomains | default([]) -%}
             {%- set sub_dir = sub if sub is string else sub.name -%}
-            {%- set sub_php = sub.php_version if sub is mapping else domain.php_version | default(user.php_versions[0] | default('8.1')) -%}
+            {%- if sub is mapping -%}
+              {%- set sub_php = sub.php_version | default(domain_default_php) -%}
+            {%- else -%}
+              {%- set sub_php = domain_default_php -%}
+            {%- endif -%}
             {%- set _ = result.append({
               'username':    user.username,
               'dir':         sub_dir,
@@ -202,7 +208,11 @@
           {# Proses addon domain #}
           {%- for addon in domain.addon | default([]) -%}
             {%- set addon_domain = addon if addon is string else addon.domain -%}
-            {%- set addon_php = addon.php_version if addon is mapping else domain.php_version | default(user.php_versions[0] | default('8.1')) -%}
+            {%- if addon is mapping -%}
+              {%- set addon_php = addon.php_version | default(domain_default_php) -%}
+            {%- else -%}
+              {%- set addon_php = domain_default_php -%}
+            {%- endif -%}
             {%- set _ = result.append({
               'username':    user.username,
               'dir':         addon_domain,
