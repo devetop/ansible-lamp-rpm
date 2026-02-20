@@ -40,3 +40,9 @@ apache_ssl_certificates:
   rfan.my.id:
     cert: /home/ec2-user/myssl/rfan.my.id_ecc/fullchain.cer
     key: /home/ec2-user/myssl/rfan.my.id_ecc/rfan.my.id.key
+  auto.rfan.my.id:
+    cert: /home/ec2-user/myssl/rfan.my.id_ecc/fullchain.cer
+    key: /home/ec2-user/myssl/rfan.my.id_ecc/rfan.my.id.key
+  autophp82.rfan.my.id:
+    cert: /home/ec2-user/myssl/rfan.my.id_ecc/fullchain.cer
+    key: /home/ec2-user/myssl/rfan.my.id_ecc/rfan.my.id.key
