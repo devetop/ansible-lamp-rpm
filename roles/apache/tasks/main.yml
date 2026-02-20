@@ -153,6 +153,43 @@
   changed_when: false
   tags: [apache, selinux]
 
+- name: Set SELinux context for user public_html directories (pattern regex)
+  community.general.sefcontext:
+    target: '/home/{{ item.username }}/public_html(/.*)?'
+    setype: httpd_sys_rw_content_t
+    state: present
+  become: yes
+  tags: [apache, selinux]
+
+- name: Apply the SELinux context to each user's public_html directory
+  ansible.builtin.command:
+    cmd: restorecon -Rv "/home/{{ item.username }}/public_html"
+  loop: "{{ hosting_users }}"
+  become: yes
+  tags: [apache, selinux]
+
+- name: Set SELinux context for each created directory (subdomains and addons)
+  community.general.sefcontext:
+    target: "/home/{{ item.username }}/{{ item.dir }}(/.*)?"
+    setype: httpd_sys_rw_content_t
+    state: present
+  loop: "{{ all_directory_entries }}"
+  loop_control:
+    label: "Set context for /home/{{ item.username }}/{{ item.dir }}"
+  when: all_directory_entries | length > 0
+  become: yes
+  tags: [apache, selinux]
+
+- name: Apply the SELinux context to each created directory (subdomains and addons)
+  ansible.builtin.command:
+    cmd: "restorecon -Rv '/home/{{ item.username }}/{{ item.dir }}'"
+  loop: "{{ all_directory_entries }}"
+  loop_control:
+    label: "Restorecon /home/{{ item.username }}/{{ item.dir }}"
+  when: all_directory_entries | length > 0
+  become: yes
+  tags: [apache, selinux]
+
 - name: Allow Apache to connect to network (for proxying to PHP-FPM)
   ansible.posix.seboolean:
     name: httpd_can_network_connect
@@ -173,6 +210,13 @@
     state: yes
     persistent: yes
   tags: [apache, selinux]
+
+# - name: Allow Apache to execute memory
+#   ansible.posix.seboolean:
+#     name: httpd_execmem
+#     state: yes
+#     persistent: yes
+#   tags: [apache, selinux]
 
 - name: Generate VirtualHost for main domains
   ansible.builtin.template:
